@@ -6,6 +6,13 @@
 LC_ALL=C
 LANG=C
 
+# If this script was piped from `curl ... | sudo bash`, our stdin IS the script
+# itself — and any `read` would eat the next line of the script, breaking the
+# very next `case` statement. Reattach stdin to the user's terminal in that case.
+if [ ! -t 0 ] && [ -r /dev/tty ]; then
+    exec </dev/tty
+fi
+
 GROUP="siem-africa"
 INSTALL_DIR="/opt/siem-africa"
 SMTP_CONF="${INSTALL_DIR}/smtp.conf"
