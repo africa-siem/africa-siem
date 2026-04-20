@@ -214,8 +214,12 @@ fi
 
 # --------- 7. Permissions ---------
 step "$(say setting_perms)"
-chown siem-africa:"$GROUP" "$DB_FILE" 2>/dev/null \
-    || chown root:"$GROUP" "$DB_FILE"
+# Rule #6 requires siem-africa:siem-africa. Create the system user if Module 3
+# has not installed it yet.
+if ! id -u siem-africa >/dev/null 2>&1; then
+    useradd --system --no-create-home --shell /usr/sbin/nologin -g "$GROUP" siem-africa
+fi
+chown siem-africa:"$GROUP" "$DB_FILE"
 chmod 664 "$DB_FILE"
 
 # --------- 8. Verify ---------

@@ -147,12 +147,13 @@ umask 027
 cat > "$SMTP_CONF" <<CONF
 # SIEM Africa - SMTP configuration
 # Read by /opt/siem-africa/agent/agent.py (EmailNotifier)
-SMTP_HOST=${SMTP_HOST}
-SMTP_PORT=${SMTP_PORT}
-SMTP_TLS=${SMTP_TLS}
-SMTP_USER=${SMTP_USER}
-SMTP_PASS=${SMTP_PASS}
-SMTP_FROM=${SMTP_FROM}
+# Values quoted so spaces / special chars in passwords survive sourcing.
+SMTP_HOST="${SMTP_HOST}"
+SMTP_PORT="${SMTP_PORT}"
+SMTP_TLS="${SMTP_TLS}"
+SMTP_USER="${SMTP_USER}"
+SMTP_PASS="${SMTP_PASS}"
+SMTP_FROM="${SMTP_FROM}"
 CONF
 chown root:"$GROUP" "$SMTP_CONF"
 chmod 660 "$SMTP_CONF"

@@ -420,11 +420,12 @@ chown root:"$GROUP" "$CRED_FILE"
 chmod 640 "$CRED_FILE"
 
 cat > "${INSTALL_DIR}/.env" <<ENV
-ORG_NAME=${ORG_NAME}
-ALERT_EMAIL=${ALERT_EMAIL}
-LANG=${LANG_CHOICE}
-INTERFACE=${IFACE}
-HOME_NET=${HOME_NET}
+# Sourced by other modules; values quoted so spaces/special chars survive.
+ORG_NAME="${ORG_NAME}"
+ALERT_EMAIL="${ALERT_EMAIL}"
+LANG_CHOICE="${LANG_CHOICE}"
+INTERFACE="${IFACE}"
+HOME_NET="${HOME_NET}"
 ENV
 chown root:"$GROUP" "${INSTALL_DIR}/.env"
 chmod 660 "${INSTALL_DIR}/.env"
