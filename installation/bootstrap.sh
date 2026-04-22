@@ -3,13 +3,16 @@
 # SIEM AFRICA - Script d'installation Module 1 depuis GitHub
 # ============================================================================
 #
-# Utilisation en UNE SEULE commande :
+# 3 modes d'utilisation :
 #
-#   curl -sSL https://raw.githubusercontent.com/africa-siem/africa-siem/main/installation/bootstrap.sh | sudo bash
+#   1. Installation LITE (sans Dashboard Wazuh) :
+#      curl -sSL https://raw.githubusercontent.com/africa-siem/africa-siem/main/installation/bootstrap.sh | sudo bash -s -- --lite
 #
-# Ou avec wget :
+#   2. Installation FULL (avec Dashboard Wazuh) :
+#      curl -sSL https://raw.githubusercontent.com/africa-siem/africa-siem/main/installation/bootstrap.sh | sudo bash -s -- --full
 #
-#   wget -qO- https://raw.githubusercontent.com/africa-siem/africa-siem/main/installation/bootstrap.sh | sudo bash
+#   3. Menu interactif (choix lite/full au lancement) :
+#      curl -sSL https://raw.githubusercontent.com/africa-siem/africa-siem/main/installation/bootstrap.sh | sudo bash
 #
 # ============================================================================
 
@@ -25,9 +28,39 @@ RESET='\033[0m'
 readonly GITHUB_USER="africa-siem"
 readonly GITHUB_REPO="africa-siem"
 readonly GITHUB_BRANCH="main"
-readonly MODULE_DIR="installation"          # Dossier dans le repo GitHub
+readonly MODULE_DIR="installation"
 readonly INSTALL_DIR="/opt/siem-africa"
 readonly TEMP_DIR="/tmp/siem-africa-install"
+
+# --- Parse des arguments -------------------------------------------------
+INSTALL_MODE="menu"  # par défaut : menu interactif
+
+for arg in "$@"; do
+    case "$arg" in
+        --lite|-l)
+            INSTALL_MODE="lite"
+            ;;
+        --full|-f)
+            INSTALL_MODE="full"
+            ;;
+        --menu|-m)
+            INSTALL_MODE="menu"
+            ;;
+        --help|-h)
+            echo "Usage: bootstrap.sh [--lite|--full|--menu]"
+            echo ""
+            echo "Options:"
+            echo "  --lite, -l   Installation LITE (sans Dashboard Wazuh)"
+            echo "  --full, -f   Installation FULL (avec Dashboard Wazuh)"
+            echo "  --menu, -m   Menu interactif (défaut)"
+            echo "  --help, -h   Affiche cette aide"
+            exit 0
+            ;;
+        *)
+            # Argument inconnu, on ignore
+            ;;
+    esac
+done
 
 # --- Bannière ------------------------------------------------------------
 clear
@@ -38,16 +71,35 @@ echo -e "${CYAN}║${RESET}  Téléchargement depuis GitHub et installation     
 echo -e "${CYAN}╚════════════════════════════════════════════════════════╝${RESET}"
 echo ""
 
+# Affichage du mode choisi
+case "$INSTALL_MODE" in
+    lite)
+        echo -e "  ${GREEN}📦 Mode sélectionné : LITE${RESET}"
+        echo -e "     • Snort IDS + Wazuh Manager"
+        echo -e "     • RAM minimum : 4 GB"
+        ;;
+    full)
+        echo -e "  ${GREEN}📦 Mode sélectionné : FULL (all-in-one)${RESET}"
+        echo -e "     • Snort + Wazuh Manager + Indexer + Dashboard"
+        echo -e "     • RAM minimum : 8 GB"
+        ;;
+    menu)
+        echo -e "  ${YELLOW}📦 Mode sélectionné : MENU INTERACTIF${RESET}"
+        echo -e "     • Vous choisirez LITE ou FULL au lancement"
+        ;;
+esac
+echo ""
+
 # --- Vérification root ---------------------------------------------------
 if [ "$(id -u)" -ne 0 ]; then
     echo -e "${RED}❌ Ce script doit être exécuté en tant que root${RESET}"
     echo ""
-    echo "Relancez avec :"
-    echo "  curl -sSL https://raw.githubusercontent.com/${GITHUB_USER}/${GITHUB_REPO}/${GITHUB_BRANCH}/${MODULE_DIR}/bootstrap.sh | sudo bash"
+    echo "Relancez avec sudo, par exemple :"
+    echo "  curl -sSL https://raw.githubusercontent.com/${GITHUB_USER}/${GITHUB_REPO}/${GITHUB_BRANCH}/${MODULE_DIR}/bootstrap.sh | sudo bash -s -- --${INSTALL_MODE}"
     exit 1
 fi
 
-# --- Vérification connexion --------------------------------------------
+# --- Vérification connexion ----------------------------------------------
 echo -e "${CYAN}[1/5]${RESET} Vérification de la connexion internet..."
 if ! ping -c 1 -W 3 github.com >/dev/null 2>&1; then
     echo -e "${RED}❌ Pas de connexion à GitHub${RESET}"
@@ -58,7 +110,7 @@ echo -e "${GREEN}✓${RESET} Connexion OK"
 echo ""
 
 # --- Installation des prérequis -----------------------------------------
-echo -e "${CYAN}[2/5]${RESET} Installation des prérequis (curl, unzip)..."
+echo -e "${CYAN}[2/5]${RESET} Installation des prérequis (curl, wget, unzip)..."
 DEBIAN_FRONTEND=noninteractive apt-get update -qq 2>/dev/null
 DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl wget unzip 2>/dev/null
 echo -e "${GREEN}✓${RESET} Prérequis installés"
@@ -109,14 +161,24 @@ if [ ! -d "$SOURCE_DIR" ]; then
     echo ""
     echo "Contenu du repo :"
     ls -la "$EXTRACTED_DIR" 2>/dev/null | head -20
-    echo ""
-    echo "Vérifiez que le dossier '${MODULE_DIR}/' existe sur GitHub et contient install.sh"
     exit 1
 fi
 
-# Vérifier la présence de install.sh
-if [ ! -f "${SOURCE_DIR}/install.sh" ]; then
-    echo -e "${RED}❌ install.sh introuvable dans ${MODULE_DIR}/${RESET}"
+# Vérifier la présence du script à exécuter selon le mode
+case "$INSTALL_MODE" in
+    lite)
+        TARGET_SCRIPT="install-lite.sh"
+        ;;
+    full)
+        TARGET_SCRIPT="install-full.sh"
+        ;;
+    menu)
+        TARGET_SCRIPT="install.sh"
+        ;;
+esac
+
+if [ ! -f "${SOURCE_DIR}/${TARGET_SCRIPT}" ]; then
+    echo -e "${RED}❌ ${TARGET_SCRIPT} introuvable dans ${MODULE_DIR}/${RESET}"
     echo ""
     echo "Contenu de ${MODULE_DIR}/ :"
     ls -la "$SOURCE_DIR" 2>/dev/null | head -20
@@ -131,7 +193,6 @@ echo -e "${CYAN}[5/5]${RESET} Installation dans ${INSTALL_DIR}/..."
 
 mkdir -p "$INSTALL_DIR/module-1"
 
-# Copier tout le contenu
 cp -r "$SOURCE_DIR/"* "$INSTALL_DIR/module-1/" 2>/dev/null
 cp -r "$SOURCE_DIR/".* "$INSTALL_DIR/module-1/" 2>/dev/null || true
 
@@ -144,15 +205,30 @@ echo ""
 # --- Nettoyage ----------------------------------------------------------
 rm -rf "$TEMP_DIR"
 
-# --- Lancement ----------------------------------------------------------
+# --- Lancement du script approprié --------------------------------------
 echo ""
 echo -e "${CYAN}╔════════════════════════════════════════════════════════╗${RESET}"
 echo -e "${CYAN}║${RESET}  ${GREEN}✓ Téléchargement terminé${RESET}                              ${CYAN}║${RESET}"
-echo -e "${CYAN}║${RESET}  Lancement de l'installation interactive...           ${CYAN}║${RESET}"
+echo -e "${CYAN}║${RESET}  Lancement de l'installation...                       ${CYAN}║${RESET}"
 echo -e "${CYAN}╚════════════════════════════════════════════════════════╝${RESET}"
 echo ""
 
 sleep 2
 
 cd "$INSTALL_DIR/module-1" || exit 1
-exec ./install.sh
+
+# Lancement du bon script selon le mode
+case "$INSTALL_MODE" in
+    lite)
+        echo -e "${GREEN}🚀 Lancement de l'installation LITE...${RESET}"
+        exec ./install-lite.sh
+        ;;
+    full)
+        echo -e "${GREEN}🚀 Lancement de l'installation FULL...${RESET}"
+        exec ./install-full.sh
+        ;;
+    menu)
+        echo -e "${GREEN}🚀 Lancement du menu interactif...${RESET}"
+        exec ./install.sh
+        ;;
+esac
