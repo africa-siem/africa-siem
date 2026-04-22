@@ -1,0 +1,19 @@
+# ============================================================================
+# SIEM AFRICA - Variables d'environnement Snort
+# ============================================================================
+# Fichier : /etc/default/snort
+# Utilisé par : /etc/systemd/system/snort.service
+#
+# Ce fichier est généré automatiquement par modules/02-snort.sh
+# ============================================================================
+
+# Interface réseau à monitorer (détectée auto à l'installation)
+INTERFACE={{INTERFACE}}
+
+# Mode : passive (IDS) ou inline (IPS, nécessite NFQUEUE)
+MODE=passive
+
+# Capture tout le trafic sur l'interface
+PROMISC=yes
+
+# ============================================================================

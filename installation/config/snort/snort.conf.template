@@ -1,0 +1,112 @@
+# ============================================================================
+# SIEM AFRICA - Template snort.conf (version light pour PME)
+# ============================================================================
+# Fichier : /etc/snort/snort.conf
+#
+# IMPORTANT : Ce template est un exemple de référence.
+# Le script 02-snort.sh utilise la config par défaut du paquet snort
+# et y ajoute seulement :
+#   - Les variables HOME_NET/EXTERNAL_NET détectées automatiquement
+#   - L'include des règles communautaires (Emerging Threats)
+#
+# Les règles sont gérées séparément par scripts/update-rules.sh
+# Le mapping MITRE ATT&CK se fait dans le Module 2 (base de données).
+#
+# Placeholders remplacés par le script :
+#   {{HOME_NET}}    → ex: 192.168.1.0/24
+#   {{INTERFACE}}   → ex: ens33
+# ============================================================================
+
+# --- Variables réseau ----------------------------------------------------
+ipvar HOME_NET {{HOME_NET}}
+ipvar EXTERNAL_NET !$HOME_NET
+
+# DNS serveurs (évite les faux positifs)
+ipvar DNS_SERVERS [8.8.8.8,8.8.4.4,1.1.1.1,$HOME_NET]
+
+# Serveurs internes (à adapter selon PME)
+ipvar SMTP_SERVERS $HOME_NET
+ipvar HTTP_SERVERS $HOME_NET
+ipvar SQL_SERVERS $HOME_NET
+ipvar SSH_SERVERS $HOME_NET
+ipvar FTP_SERVERS $HOME_NET
+
+# --- Ports standards -----------------------------------------------------
+portvar HTTP_PORTS [80,443,8000,8080,8443]
+portvar SSH_PORTS 22
+portvar FTP_PORTS [21,2100]
+portvar ORACLE_PORTS 1024:
+portvar SHELLCODE_PORTS !80
+
+# --- Chemins -------------------------------------------------------------
+var RULE_PATH /etc/snort/rules
+var SO_RULE_PATH /etc/snort/so_rules
+var PREPROC_RULE_PATH /etc/snort/preproc_rules
+var WHITE_LIST_PATH /etc/snort/rules
+var BLACK_LIST_PATH /etc/snort/rules
+
+config logdir: /var/log/snort
+
+# --- Moteur --------------------------------------------------------------
+config daq: pcap
+config daq_mode: passive
+config daq_var: interface={{INTERFACE}}
+
+# User/Group (drop privileges après bind interface)
+config set_uid: snort
+config set_gid: snort
+
+# --- Préprocesseurs essentiels ------------------------------------------
+
+# Normalisation IP/TCP
+preprocessor normalize_ip4
+preprocessor normalize_tcp: ips ecn stream
+preprocessor normalize_icmp4
+
+# Frag3 : réassemblage fragments
+preprocessor frag3_global: max_frags 65536
+preprocessor frag3_engine: policy linux detect_anomalies overlap_limit 10 min_fragment_length 100 timeout 180
+
+# Stream5 : suivi sessions TCP
+preprocessor stream5_global: track_tcp yes, track_udp yes, max_tcp 262144, max_udp 131072
+preprocessor stream5_tcp: policy linux, detect_anomalies, require_3whs 180
+preprocessor stream5_udp: timeout 180
+
+# HTTP inspection
+preprocessor http_inspect: global iis_unicode_map unicode.map 1252 compress_depth 65535 decompress_depth 65535
+preprocessor http_inspect_server: server default \
+    http_methods { GET POST PUT HEAD DELETE OPTIONS TRACE CONNECT } \
+    ports { $HTTP_PORTS }
+
+# SSH
+preprocessor ssh: server_ports { $SSH_PORTS } \
+                  autodetect \
+                  max_client_bytes 19600 \
+                  max_encrypted_packets 20
+
+# DNS
+preprocessor dns: ports { 53 } enable_rdata_overflow
+
+# --- Outputs -------------------------------------------------------------
+
+# Log binaire (archive forensique)
+output unified2: filename snort.log, limit 128
+
+# Format "fast" lu par Wazuh (HARD-WON FIX V1)
+output alert_fast: /var/log/snort/alert
+
+# --- Inclusions des règles (ajoutées par le script) ---------------------
+# Le fichier /etc/snort/rules-includes.conf est généré automatiquement
+# par scripts/update-rules.sh et contient les includes de toutes les
+# règles téléchargées depuis Emerging Threats.
+#
+# Ne PAS ajouter manuellement les includes ici.
+
+# --- Classification et seuils -------------------------------------------
+include classification.config
+include reference.config
+# include threshold.conf   # optionnel
+
+# ============================================================================
+# Fin du template snort.conf
+# ============================================================================
