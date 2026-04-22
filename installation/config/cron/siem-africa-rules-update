@@ -1,0 +1,41 @@
+# ============================================================================
+# SIEM AFRICA - Cron pour mise à jour hebdomadaire des règles Snort
+# ============================================================================
+# Fichier : /etc/cron.d/siem-africa-rules-update
+# Installé par le script modules/02-snort.sh
+#
+# Planification :
+#   Tous les lundis à 3h00 du matin (heure locale du serveur)
+#   - Pas de charge pendant les heures de bureau
+#   - 3h du matin = trafic internet minimal
+#   - Lundi = début de semaine, règles fraîches pour la semaine
+#
+# Logs :
+#   Sortie redirigée vers /var/log/siem-africa/rules-update.log
+#   Rotation automatique via logrotate (à configurer en V2.1)
+# ============================================================================
+
+# Variables d'environnement cron
+SHELL=/bin/bash
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+
+# Format : minute heure jour-mois mois jour-semaine user commande
+#          0-59   0-23  1-31     1-12  0-6 (0=dim)
+
+# Mise à jour hebdomadaire le lundi à 3h00
+0 3 * * 1 root /opt/siem-africa/module-1/scripts/update-rules.sh >> /var/log/siem-africa/rules-update.log 2>&1
+
+# ============================================================================
+# Pour changer la fréquence :
+#
+# Quotidien à 3h du matin :
+#   0 3 * * *
+#
+# Toutes les 12h :
+#   0 */12 * * *
+#
+# Dimanche uniquement à 2h :
+#   0 2 * * 0
+#
+# Après modification : sudo systemctl reload cron
+# ============================================================================
