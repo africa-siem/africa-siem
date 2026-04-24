@@ -1,223 +1,147 @@
-# 🛡️ SIEM AFRICA — Module 1 : IDS & SIEM
+# 🧹 SIEM Africa — Pack Auto-Cleanup v2.1
 
-> Module 1 du projet SIEM Africa : Système de détection d'intrusion (Snort) et gestionnaire SIEM (Wazuh) pour PME africaines.
+## 🎯 Ce que fait ce pack
 
----
-
-## 📖 Présentation
-
-Le **Module 1** constitue la couche **capteur** de SIEM Africa. Il assure :
-- La détection d'intrusions réseau via **Snort IDS** (mode passif)
-- La gestion SIEM centralisée via **Wazuh Manager**
-- Optionnellement, une interface web via **Wazuh Dashboard** (mode full)
-
-C'est le **premier module à installer**. Il crée l'infrastructure de base (groupe, users, fichier d'état) que les autres modules utiliseront.
+Il ajoute à ton Module 1 un **mécanisme de nettoyage automatique** avant chaque installation. Fini les plantages dus à des résidus d'installations précédentes.
 
 ---
 
-## 🎯 Modes d'installation disponibles
+## 📦 Contenu du pack
 
-### Mode **LITE** (léger)
-- **Composants** : Snort IDS + Wazuh Manager
-- **Pas d'interface web Wazuh**
-- **Prérequis** : 4 GB RAM, 50 GB disque
-- **Cible** : PME avec matériel limité, serveurs mono-usage
-- **Avantage** : Faible consommation ressources
-- **Note** : Les alertes seront visualisées via le Module 4 (Dashboard Django)
-
-### Mode **FULL** (complet)
-- **Composants** : Snort IDS + Wazuh Manager + Indexer + Dashboard
-- **Interface web Wazuh complète** (analyse avancée)
-- **Prérequis** : 8 GB RAM, 50 GB disque
-- **Cible** : PME moyennes à grandes, analystes sécurité
-- **Avantage** : Double interface (Wazuh Dashboard pour analystes, Django pour gestionnaires)
-
----
-
-## 💻 Systèmes supportés
-
-| OS | Version | Statut |
-|----|---------|--------|
-| Ubuntu | 22.04 LTS (Jammy) | ✅ Supporté, testé |
-| Ubuntu | 24.04 LTS (Noble) | ✅ Supporté, testé |
-| Debian | 11 (Bullseye) | ✅ Supporté (compatibilité théorique) |
-| Debian | 12 (Bookworm) | ✅ Supporté (compatibilité théorique) |
-
-**Architecture** : x86_64 uniquement (ARM en perspectives V2.1).
+```
+siem-africa-cleanup/
+├── clean-install.sh           ← SCRIPT TOUT-EN-UN : purge + install fraîche
+├── core/
+│   └── cleanup.sh             ← Fonctions de nettoyage (à ajouter à core/)
+├── modules/
+│   ├── 02-snort.sh            ← Version patchée (remplace l'original)
+│   ├── 03-wazuh-manager.sh    ← Version patchée
+│   ├── 04-wazuh-indexer.sh    ← Version patchée
+│   └── 05-wazuh-dashboard.sh  ← Version patchée
+├── PATCH-INSTRUCTIONS.md      ← Détails techniques (pour info)
+└── README.md                  ← Ce fichier
+```
 
 ---
 
-## 🚀 Utilisation rapide
+## 🚀 Installation du pack
 
-### Option 1 : Installation guidée (recommandée pour débutants)
+### Étape 1 : Copier les fichiers dans ton projet Module 1
+
+Depuis la racine de ton Module 1 (`module-1-ids-siem/`) :
+
 ```bash
+# 1. Ajouter le fichier cleanup.sh
+cp siem-africa-cleanup/core/cleanup.sh core/cleanup.sh
+
+# 2. Remplacer les 4 modules modifiés
+cp siem-africa-cleanup/modules/02-snort.sh modules/02-snort.sh
+cp siem-africa-cleanup/modules/03-wazuh-manager.sh modules/03-wazuh-manager.sh
+cp siem-africa-cleanup/modules/04-wazuh-indexer.sh modules/04-wazuh-indexer.sh
+cp siem-africa-cleanup/modules/05-wazuh-dashboard.sh modules/05-wazuh-dashboard.sh
+
+# 3. Ajouter le script tout-en-un à la racine
+cp siem-africa-cleanup/clean-install.sh clean-install.sh
+
+# 4. Permissions d'exécution
+chmod +x clean-install.sh
+chmod +x modules/*.sh
+```
+
+### Étape 2 : Tester sur ta VM
+
+```bash
+# Option A : clean-install tout-en-un (recommandé après un échec)
+sudo ./clean-install.sh
+
+# Option B : install normal (les modules nettoient maintenant automatiquement)
 sudo ./install.sh
 ```
-Un menu interactif vous demandera le mode à installer.
 
-### Option 2 : Installation directe Mode LITE
+---
+
+## ✨ Ce qui change concrètement
+
+### Avant (version 2.0)
 ```bash
-sudo ./install-lite.sh
+sudo ./install.sh
+# → Plante car Wazuh déjà partiellement installé
+# → Erreur "readonly database", "/var/ossec existe déjà", etc.
+# → Tu dois nettoyer à la main avant de relancer
 ```
 
-### Option 3 : Installation directe Mode FULL
+### Après (version 2.1 avec ce pack)
 ```bash
-sudo ./install-full.sh
-```
-
-### Désinstallation
-```bash
-sudo ./uninstall.sh
-```
-
-### Réparation (en cas de problème)
-```bash
-sudo ./repair.sh
+sudo ./install.sh
+# → Détecte Wazuh résiduel
+# → Purge automatiquement
+# → Réinstalle proprement
+# → ✅ Installation réussie
 ```
 
 ---
 
-## 📋 Prérequis
+## 🛠️ Les 10 fonctions de cleanup.sh
 
-Le script vérifie automatiquement avant installation :
-
-- [ ] Droits root (`sudo`)
-- [ ] Système supporté (Ubuntu 22.04/24.04 ou Debian 11/12)
-- [ ] Connexion internet active
-- [ ] RAM disponible (4 GB lite / 8 GB full)
-- [ ] Espace disque disponible (50 GB minimum)
-- [ ] Interface réseau détectée
-- [ ] Ports requis disponibles
-- [ ] Aucune installation corrompue préexistante
-
-**Si un prérequis échoue**, l'installation s'arrête avec un message d'erreur et une solution proposée.
-
----
-
-## 🏗️ Architecture
-
-```
-📁 module-1-ids-siem/
-│
-├── 📄 install.sh              → Script principal (menu interactif)
-├── 📄 install-lite.sh         → Installation directe Mode LITE
-├── 📄 install-full.sh         → Installation directe Mode FULL
-├── 📄 uninstall.sh            → Désinstallation propre
-├── 📄 repair.sh               → Réparation d'installation
-│
-├── 📁 core/                   → Fonctions réutilisables
-│   ├── logging.sh             → Logs formatés (INFO, SUCCESS, WARN, ERROR)
-│   ├── langue.sh              → Support FR/EN
-│   ├── os-detect.sh           → Détection Ubuntu/Debian
-│   ├── prerequis.sh           → Vérifications système
-│   ├── users.sh               → Gestion groupe siem-africa + users
-│   └── state.sh               → Fichier d'état YAML
-│
-├── 📁 modules/                → Étapes d'installation
-│   ├── 01-system-prep.sh      → Préparation système
-│   ├── 02-snort.sh            → Installation Snort 2.9
-│   ├── 03-wazuh-manager.sh    → Installation Wazuh Manager 4.14
-│   ├── 04-wazuh-indexer.sh    → (Mode FULL) Wazuh Indexer
-│   ├── 05-wazuh-dashboard.sh  → (Mode FULL) Wazuh Dashboard
-│   ├── 06-integration.sh      → Intégration Snort ↔ Wazuh
-│   └── 07-state-file.sh       → Génération fichier d'état
-│
-├── 📁 config/                 → Templates de configuration
-│   ├── snort/
-│   │   ├── snort.conf.template
-│   │   └── local.rules
-│   ├── wazuh/
-│   │   └── ossec.conf.template
-│   └── systemd/
-│       └── siem-africa-snort.service
-│
-└── 📁 tests/                  → Tests de validation
-    ├── test-snort.sh
-    ├── test-wazuh.sh
-    └── test-integration.sh
-```
+| Fonction | Utilité |
+|---|---|
+| `cleanup_snort` | Purge Snort (paquet, config, logs, service) |
+| `cleanup_wazuh_manager` | Purge Wazuh Manager (+ `/var/ossec`) |
+| `cleanup_wazuh_indexer` | Purge Wazuh Indexer (OpenSearch) |
+| `cleanup_wazuh_dashboard` | Purge Wazuh Dashboard |
+| `cleanup_filebeat` | Purge Filebeat (lié à Wazuh) |
+| `cleanup_wazuh_repo` | Supprime le dépôt APT Wazuh |
+| `cleanup_siem_state_files` | Supprime state.yaml, RESUME.txt, secrets (avec backup auto) |
+| `cleanup_siem_users` | Supprime les users siem-* et le groupe |
+| `cleanup_all` | **Purge TOUT** (utilisé par clean-install.sh) |
+| `verify_cleanup` | Vérifie qu'il ne reste aucune trace |
 
 ---
 
 ## 🔐 Sécurité
 
-### Principe du moindre privilège
-Chaque composant fonctionne avec son propre utilisateur système :
-- `siem-ids` : Snort + Wazuh Manager (Module 1)
-- `siem-db` : Base de données (Module 2)
-- `siem-agent` : Agent Python (Module 3)
-- `siem-web` : Dashboard Django (Module 4)
-
-Tous ces utilisateurs appartiennent au groupe **`siem-africa`** qui gère les accès partagés.
-
-### Fichier d'état protégé
-`/etc/siem-africa/siem-africa.state.yaml` (permissions `640`, propriétaire `root:siem-admin`)
-
-### Mots de passe
-Stockés dans `/etc/siem-africa/secrets/` avec permissions `600` (lecture root uniquement).
+- Les fichiers de config existants sont **sauvegardés** dans `/var/backups/siem-africa-old-<date>/` avant suppression.
+- Les **paquets sont purgés** (`apt-get remove --purge`), pas juste désinstallés.
+- Les **processus résiduels sont killés** avec `pkill -9` en cas de processus zombie.
+- `daemon-reload` + `reset-failed` sont appelés pour nettoyer systemd.
 
 ---
 
-## 📝 Fichiers générés par le script
+## 📋 Checklist post-intégration
 
-Après installation réussie, les fichiers suivants sont créés :
+Après avoir copié les fichiers, vérifie :
 
-| Fichier | Rôle |
-|---------|------|
-| `/etc/siem-africa/siem-africa.state.yaml` | État complet de l'installation (YAML) |
-| `/etc/siem-africa/RESUME.txt` | Résumé lisible (commandes, credentials) |
-| `/etc/siem-africa/secrets/wazuh-admin.pwd` | Mot de passe admin Wazuh (mode FULL) |
-| `/var/log/siem-africa/install.log` | Log complet de l'installation |
-| `/var/log/siem-africa/` | Logs des modules |
-| `/var/lib/siem-africa/` | Données partagées (DB future) |
-| `/opt/siem-africa/` | Code des modules |
+- [ ] `ls core/cleanup.sh` → existe
+- [ ] `ls modules/02-snort.sh` → présent et patché (contient `cleanup_snort`)
+- [ ] `ls clean-install.sh` → existe et exécutable
+- [ ] `bash -n clean-install.sh` → pas d'erreur de syntaxe
+- [ ] `bash -n core/cleanup.sh` → pas d'erreur de syntaxe
 
 ---
 
-## 🧪 Tests de validation
+## ⚠️ Limitation connue
 
-Après installation, des tests automatiques vérifient :
+Ce pack ne **résout pas automatiquement** les problèmes suivants :
+- Bug de config Wazuh spécifique (si `ossec.conf` contient une erreur)
+- Problème réseau (pas d'internet, DNS cassé)
+- RAM insuffisante (< 4 GB pour lite, < 8 GB pour full)
 
-```bash
-# Tests individuels
-sudo ./tests/test-snort.sh
-sudo ./tests/test-wazuh.sh
-sudo ./tests/test-integration.sh
-
-# Ou via le script principal
-sudo systemctl status snort
-sudo systemctl status wazuh-manager
-sudo tail -f /var/ossec/logs/alerts/alerts.json
-```
+Pour ces cas, les scripts afficheront un message d'erreur clair avec la commande de diagnostic à lancer.
 
 ---
 
-## 📚 Documentation complémentaire
+## 🆘 Si ça plante encore
 
-- **INSTALL.md** : Guide d'installation détaillé étape par étape
-- **FAQ-JURY.md** : Questions probables de soutenance et réponses types
-- **Rapport académique** : Chapitre "Implémentation — Module 1"
+1. Lance `sudo ./clean-install.sh` (purge totale + install)
+2. Si ça plante toujours, envoie-moi **les 20 dernières lignes** de :
+   ```bash
+   sudo cat /var/log/siem-africa/install.log | tail -20
+   ```
+3. Pour Snort : `sudo journalctl -u snort -n 30`
+4. Pour Wazuh : `sudo journalctl -u wazuh-manager -n 30`
 
----
-
-## 🛠️ Dépannage rapide
-
-| Problème | Solution |
-|----------|----------|
-| "Port 1514 déjà utilisé" | `sudo ./uninstall.sh` puis réinstaller |
-| "Installation corrompue détectée" | `sudo ./repair.sh` |
-| "Snort ne démarre pas" | Vérifier interface réseau dans `/etc/siem-africa/siem-africa.state.yaml` |
-| "Wazuh Dashboard inaccessible" | Vérifier firewall : `sudo ufw status` |
+Avec ces logs je peux diagnostiquer le vrai problème.
 
 ---
 
-## 📧 Contact & Contribution
-
-**Projet** : SIEM Africa v2.0
-**Repository** : [github.com/africa-siem/africa-siem](https://github.com/africa-siem/africa-siem)
-**Auteur** : Gaetan — IUT de Douala, Cameroun
-**Licence** : MIT
-
----
-
-*Module développé dans le cadre d'un mémoire de fin d'études de licence, IUT de Douala, promotion 2025-2026.*
+*Pack v2.1 — SIEM Africa — Module 1 — IUT Douala 2026*
