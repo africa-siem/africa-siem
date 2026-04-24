@@ -1,316 +1,188 @@
 #!/bin/bash
 # ============================================================================
-# SIEM AFRICA — Module 1 / Étape 2
-# modules/02-snort.sh — Installation et configuration de Snort IDS
+# SIEM AFRICA — Module 1
+# modules/02-snort.sh — Installation Snort IDS (avec auto-cleanup)
 # ============================================================================
 #
-# Ce script installe Snort 2.9 et le configure en mode IDS passif avec
-# les Community Rules Emerging Threats (gratuit, 30 000+ règles).
+# Ce script installe Snort IDS en mode passif sur l'interface réseau
+# détectée automatiquement.
 #
-# Étapes :
-#   1. Installation du paquet snort via apt
-#   2. Configuration de l'interface à monitorer
-#   3. Configuration du réseau HOME_NET
-#   4. Téléchargement des règles Emerging Threats Open
-#   5. Installation du cron de mise à jour hebdomadaire
-#   6. Test de la configuration
-#   7. Activation du service systemd
-#
-# Choix architectural :
-#   Les règles custom SIEM Africa NE SONT PAS dans Snort.
-#   Elles seront dans le Module 2 (base de données SQLite).
-#   Module 1 = uniquement Community Rules.
+# ✨ NOUVEAUTÉ V2.1 : auto-cleanup avant installation
+#    Si une installation antérieure est détectée, elle est automatiquement
+#    purgée avant la nouvelle installation.
 #
 # ============================================================================
 
-# --- Chargement du contexte ------------------------------------------------
+# --- Répertoire racine du module (niveau au-dessus de modules/) -----------
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# --- Chargement des fonctions utilitaires --------------------------------
 # shellcheck disable=SC1091
 source "${SCRIPT_DIR}/core/logging.sh"
 # shellcheck disable=SC1091
+source "${SCRIPT_DIR}/core/langue.sh"
+# shellcheck disable=SC1091
 source "${SCRIPT_DIR}/core/os-detect.sh"
-
-# --- Variables ------------------------------------------------------------
-readonly SNORT_CONF="/etc/snort/snort.conf"
-readonly SNORT_LOG_DIR="/var/log/snort"
-readonly SNORT_RULES_DIR="/etc/snort/rules"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/core/cleanup.sh"    # ✨ NOUVEAU
 
 # ============================================================================
-# FONCTION 1 : Calcul du réseau CIDR
+# INSTALLATION DE SNORT
 # ============================================================================
 
-get_network_cidr() {
-    if [ -z "$DETECTED_INTERFACE" ]; then
-        DETECTED_INTERFACE=$(ip -o link show | grep "state UP" | grep -v "lo:" | awk -F': ' '{print $2}' | head -1)
-    fi
+install_snort() {
+    log_step "5/8" "$(t step_snort)"
 
-    local ip_cidr
-    ip_cidr=$(ip -o -4 addr show "$DETECTED_INTERFACE" 2>/dev/null | awk '{print $4}' | head -1)
+    # ========================================================================
+    # ✨ ÉTAPE NOUVEAU : Auto-cleanup avant installation
+    # ========================================================================
+    # Si Snort est déjà installé (ou partiellement), on purge avant.
+    # Cela résout le problème "installation qui plante à cause de résidus".
+    cleanup_snort
 
-    if [ -z "$ip_cidr" ]; then
-        log_warning "Impossible de détecter le CIDR, utilisation de 192.168.0.0/16"
-        echo "192.168.0.0/16"
-        return 1
-    fi
+    # Pause de 2 secondes pour laisser le système se stabiliser après cleanup
+    sleep 2
 
-    local ip_only
-    ip_only=$(echo "$ip_cidr" | cut -d'/' -f1)
+    # ========================================================================
+    # Installation fraîche
+    # ========================================================================
 
-    local network
-    network=$(echo "$ip_only" | awk -F'.' '{print $1"."$2"."$3".0"}')
+    log_info "Mise à jour de la liste des paquets..."
+    DEBIAN_FRONTEND=noninteractive apt-get update -qq 2>&1 | tee -a "$LOG_FILE" >/dev/null
 
-    echo "${network}/24"
-    return 0
-}
+    log_info "Installation de Snort 2.9 et ses dépendances..."
 
-# ============================================================================
-# FONCTION 2 : Installation du paquet Snort
-# ============================================================================
-
-install_snort_package() {
-    log_info "Installation du paquet Snort..."
-
-    echo "snort snort/address_range string $(get_network_cidr)" | debconf-set-selections
+    # Pré-réponse aux prompts debconf (Snort demande l'interface réseau en install)
+    # On force l'interface détectée automatiquement
+    echo "snort snort/address_range string any/any" | debconf-set-selections
     echo "snort snort/interface string ${DETECTED_INTERFACE:-any}" | debconf-set-selections
+    echo "snort snort/startup string boot" | debconf-set-selections
 
-    if ! DEBIAN_FRONTEND=noninteractive apt-get install -y -qq snort 2>&1 | tee -a "$LOG_FILE" >/dev/null; then
-        log_error "Échec de l'installation de Snort"
+    # Installation avec DEBIAN_FRONTEND non-interactif pour éviter les prompts bloquants
+    if ! DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+        snort snort-common snort-rules-default 2>&1 | tee -a "$LOG_FILE"; then
+        log_error "Échec installation Snort via apt"
+        log_info "Consultez les détails : ${LOG_FILE}"
         return 1
     fi
 
+    # Vérification que Snort est bien installé
     if ! command -v snort >/dev/null 2>&1; then
-        log_error "Snort installé mais binaire introuvable"
+        log_error "Snort n'a pas été installé correctement (binaire introuvable)"
         return 1
     fi
 
-    local snort_version
-    snort_version=$(snort -V 2>&1 | grep -oP "Version \K[0-9.]+" | head -1)
-    log_success "Snort installé (version ${snort_version:-inconnue})"
+    log_success "Snort installé (version: $(snort -V 2>&1 | grep Version | awk '{print $3}'))"
 
-    return 0
-}
+    # ========================================================================
+    # Configuration de Snort
+    # ========================================================================
 
-# ============================================================================
-# FONCTION 3 : Configuration de Snort
-# ============================================================================
+    log_info "Configuration de Snort pour l'interface ${DETECTED_INTERFACE}..."
 
-configure_snort() {
-    log_info "Configuration de Snort..."
+    # Créer les dossiers nécessaires
+    mkdir -p /etc/snort/rules
+    mkdir -p /var/log/snort
+    mkdir -p /var/log/siem-africa
 
-    if [ -f "$SNORT_CONF" ] && [ ! -f "${SNORT_CONF}.original" ]; then
-        cp "$SNORT_CONF" "${SNORT_CONF}.original"
-        log_info "Backup : ${SNORT_CONF}.original"
+    # Configurer les permissions (user snort créé par le paquet)
+    if id snort >/dev/null 2>&1; then
+        chown -R snort:snort /var/log/snort
+        # Ajouter snort au groupe siem-africa pour partage de logs
+        if getent group siem-africa >/dev/null 2>&1; then
+            usermod -aG siem-africa snort
+            log_info "User 'snort' ajouté au groupe 'siem-africa'"
+        fi
     fi
 
-    local home_net
-    home_net=$(get_network_cidr)
+    # Modifier la config pour utiliser la bonne interface
+    if [ -f /etc/snort/snort.debian.conf ]; then
+        sed -i "s/^DEBIAN_SNORT_INTERFACE=.*/DEBIAN_SNORT_INTERFACE=\"${DETECTED_INTERFACE}\"/" \
+            /etc/snort/snort.debian.conf
+    fi
 
-    log_info "Réseau HOME_NET : ${home_net}"
-    log_info "Interface : ${DETECTED_INTERFACE}"
+    # Copier le template de config custom si présent
+    if [ -f "${SCRIPT_DIR}/config/snort/snort.conf.template" ]; then
+        # Remplacement des variables dans le template
+        sed -e "s|{{INTERFACE}}|${DETECTED_INTERFACE}|g" \
+            -e "s|{{HOME_NET}}|$(echo "$DETECTED_IP" | cut -d'.' -f1-3).0/24|g" \
+            "${SCRIPT_DIR}/config/snort/snort.conf.template" > /etc/snort/siem-africa.conf
+        log_info "Config SIEM Africa installée : /etc/snort/siem-africa.conf"
+    fi
 
-    if grep -q "^ipvar HOME_NET" "$SNORT_CONF"; then
-        sed -i "s|^ipvar HOME_NET.*|ipvar HOME_NET ${home_net}|" "$SNORT_CONF"
+    # ========================================================================
+    # Service systemd custom (remplace celui par défaut du paquet)
+    # ========================================================================
+
+    log_info "Installation du service systemd personnalisé..."
+
+    if [ -f "${SCRIPT_DIR}/config/systemd/siem-africa-snort.service" ]; then
+        cp "${SCRIPT_DIR}/config/systemd/siem-africa-snort.service" \
+           /etc/systemd/system/snort.service
     else
-        sed -i "1i\ipvar HOME_NET ${home_net}" "$SNORT_CONF"
-    fi
-
-    if grep -q "^ipvar EXTERNAL_NET" "$SNORT_CONF"; then
-        sed -i "s|^ipvar EXTERNAL_NET.*|ipvar EXTERNAL_NET !\$HOME_NET|" "$SNORT_CONF"
-    fi
-
-    mkdir -p "$SNORT_LOG_DIR"
-    chown snort:snort "$SNORT_LOG_DIR" 2>/dev/null || chown root:adm "$SNORT_LOG_DIR"
-    chmod 755 "$SNORT_LOG_DIR"
-
-    mkdir -p "$SNORT_RULES_DIR"
-
-    log_success "Snort configuré"
-    return 0
-}
-
-# ============================================================================
-# FONCTION 4 : Téléchargement des Community Rules
-# ============================================================================
-
-# Appelle scripts/update-rules.sh qui télécharge Emerging Threats Open.
-download_community_rules() {
-    log_info "Téléchargement des Community Rules depuis Emerging Threats..."
-    log_info "Source : https://rules.emergingthreats.net (GRATUIT)"
-
-    local update_script="${SCRIPT_DIR}/scripts/update-rules.sh"
-
-    if [ ! -f "$update_script" ]; then
-        log_error "Script update-rules.sh introuvable"
-        return 1
-    fi
-
-    chmod +x "$update_script"
-
-    if ! bash "$update_script"; then
-        log_warning "Échec du téléchargement des règles"
-        log_info "Snort fonctionnera mais sans règles communautaires"
-        log_info "Réessayer plus tard : sudo ${update_script}"
-        return 0
-    fi
-
-    log_success "Community Rules installées"
-    return 0
-}
-
-# ============================================================================
-# FONCTION 5 : Ajout de l'include des règles dans snort.conf
-# ============================================================================
-
-configure_rules_include() {
-    log_info "Configuration des inclusions de règles..."
-
-    local includes_file="/etc/snort/rules-includes.conf"
-
-    if ! grep -q "rules-includes.conf" "$SNORT_CONF"; then
-        echo "" >> "$SNORT_CONF"
-        echo "# SIEM AFRICA - Inclusion des règles communautaires" >> "$SNORT_CONF"
-        echo "include ${includes_file}" >> "$SNORT_CONF"
-        log_success "Include ajouté à snort.conf"
-    else
-        log_info "Include déjà présent"
-    fi
-
-    return 0
-}
-
-# ============================================================================
-# FONCTION 6 : Installation du cron de mise à jour hebdomadaire
-# ============================================================================
-
-install_update_cron() {
-    log_info "Installation du cron de mise à jour..."
-
-    local cron_source="${SCRIPT_DIR}/config/cron/siem-africa-rules-update"
-    local cron_target="/etc/cron.d/siem-africa-rules-update"
-
-    if [ ! -f "$cron_source" ]; then
-        log_warning "Fichier cron introuvable"
-        return 0
-    fi
-
-    cp "$cron_source" "$cron_target"
-    chown root:root "$cron_target"
-    chmod 644 "$cron_target"
-
-    systemctl reload cron 2>/dev/null || service cron reload 2>/dev/null || true
-
-    log_success "Cron installé : mise à jour chaque lundi à 3h"
-    return 0
-}
-
-# ============================================================================
-# FONCTION 7 : Test de la configuration
-# ============================================================================
-
-test_snort_config() {
-    log_info "Test de la configuration Snort..."
-
-    local test_output
-    test_output=$(snort -T -c "$SNORT_CONF" 2>&1)
-
-    if echo "$test_output" | grep -q "Snort successfully validated"; then
-        log_success "Configuration Snort valide"
-    else
-        log_warning "Configuration Snort a des avertissements (non bloquant)"
-    fi
-
-    return 0
-}
-
-# ============================================================================
-# FONCTION 8 : Service systemd
-# ============================================================================
-
-configure_snort_service() {
-    log_info "Configuration du service systemd Snort..."
-
-    if ! systemctl list-unit-files | grep -q "snort.service"; then
-        log_info "Création manuelle du service..."
-
-        local service_template="${SCRIPT_DIR}/config/systemd/snort.service"
-
-        if [ -f "$service_template" ]; then
-            cp "$service_template" /etc/systemd/system/snort.service
-        else
-            cat > /etc/systemd/system/snort.service <<EOF
+        # Fallback : génération inline d'un service minimal
+        cat > /etc/systemd/system/snort.service <<EOF
 [Unit]
-Description=Snort NIDS Daemon
+Description=SIEM Africa - Snort IDS
 After=network.target
 
 [Service]
-Type=simple
-User=snort
-Group=snort
-ExecStart=/usr/sbin/snort -D -c ${SNORT_CONF} -i ${DETECTED_INTERFACE} -l ${SNORT_LOG_DIR}
+Type=forking
+PIDFile=/var/log/siem-africa/snort.pid
+ExecStartPre=/bin/mkdir -p /var/log/siem-africa
+ExecStart=/usr/sbin/snort -D -i ${DETECTED_INTERFACE} -c /etc/snort/snort.conf -l /var/log/snort
 Restart=on-failure
 RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
 EOF
-        fi
-
-        systemctl daemon-reload
     fi
 
-    # Variables d'environnement
-    cat > /etc/default/snort <<EOF
-# SIEM AFRICA - Variables Snort
-INTERFACE=${DETECTED_INTERFACE:-eth0}
-MODE=passive
-PROMISC=yes
-EOF
+    systemctl daemon-reload
 
-    systemctl enable snort.service 2>&1 | tee -a "$LOG_FILE" >/dev/null
-    log_success "Service Snort activé au démarrage"
+    # ========================================================================
+    # Démarrage du service
+    # ========================================================================
 
     log_info "Démarrage de Snort..."
-    if systemctl start snort.service 2>&1 | tee -a "$LOG_FILE" >/dev/null; then
-        sleep 3
-        if systemctl is-active --quiet snort.service; then
-            log_success "Service Snort actif"
-        else
-            log_warning "Snort démarré mais pas actif"
-        fi
-    else
-        log_warning "Impossible de démarrer Snort"
+
+    if systemctl enable snort >/dev/null 2>&1; then
+        log_success "Service Snort activé au démarrage"
     fi
 
+    if ! systemctl start snort; then
+        log_error "Snort n'a pas démarré. Diagnostic :"
+        systemctl status snort --no-pager | tee -a "$LOG_FILE"
+        log_info "Commandes de debug :"
+        log_info "  sudo journalctl -u snort -n 50"
+        log_info "  sudo snort -T -c /etc/snort/snort.conf  (test config)"
+        return 1
+    fi
+
+    # Attendre 3 secondes et vérifier que le service tourne toujours
+    sleep 3
+    if ! systemctl is-active --quiet snort; then
+        log_error "Snort a démarré puis s'est arrêté. Vérifiez la config."
+        systemctl status snort --no-pager | tee -a "$LOG_FILE"
+        return 1
+    fi
+
+    log_success "Snort est actif et surveille l'interface ${DETECTED_INTERFACE}"
     return 0
 }
 
 # ============================================================================
-# FONCTION PRINCIPALE
+# POINT D'ENTRÉE (si le script est exécuté directement pour debug)
 # ============================================================================
 
-main() {
-    log_info "=== Étape : Installation de Snort IDS ==="
+# Si ce script est sourcé par un autre, on ne fait rien ici.
+# Si il est exécuté directement (./02-snort.sh), on lance install_snort.
+if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
+    log_init
+    install_snort
+fi
 
-    install_snort_package    || die "Échec installation Snort"
-    configure_snort          || die "Échec configuration Snort"
-    download_community_rules # non bloquant
-    configure_rules_include  # non bloquant
-    install_update_cron      # non bloquant
-    test_snort_config        # non bloquant
-    configure_snort_service  # non bloquant
-
-    log_success "Snort IDS installé avec succès ✓"
-    log_info ""
-    log_info "📋 Règles : Emerging Threats Open (communautaires, gratuites)"
-    log_info "🔄 Mise à jour auto : chaque lundi à 3h"
-    log_info "🛠️  Mise à jour manuelle :"
-    log_info "    sudo /opt/siem-africa/module-1/scripts/update-rules.sh"
-    log_info ""
-    log_info "ℹ️  Les règles custom SIEM Africa (mapping MITRE, attaques"
-    log_info "   spécifiques) seront gérées via le Module 2 (base de données)"
-    log_info ""
-
-    return 0
-}
-
-main "$@"
+# ============================================================================
+# Fin de modules/02-snort.sh
+# ============================================================================
