@@ -1,21 +1,24 @@
 #!/bin/bash
 #===============================================================================
 #
-#          FILE: install_module1.sh
+#          FILE: install_all.sh
 #
-#   DESCRIPTION: SIEM Africa - Module 1 - Menu de choix LITE/FULL
+#   DESCRIPTION: SIEM Africa - Module 1 - Menu interactif LITE/FULL
 #
-#         USAGE: sudo ./install_module1.sh
+#         USAGE: sudo ./install_all.sh
 #
-#   Ce script propose un choix interactif entre :
-#     - LITE : Snort + Wazuh Manager (4 Go RAM, pas de Dashboard)
-#     - FULL : Snort + Wazuh complet (8 Go RAM, Dashboard inclus)
+#   Ce script propose un menu interactif :
+#     - Choix de la langue (FR / EN)
+#     - Choix du mode d'installation (LITE / FULL)
+#   Puis lance le script correspondant.
 #
-#   Il lance ensuite le bon script selon le choix.
+#   ⚠️  Ce script nécessite un terminal interactif (pas de curl | bash).
+#   Pour installation non-interactive, utiliser directement :
+#     sudo ./install_lite.sh  ou  sudo ./install_full.sh
 #
 #===============================================================================
 
-set -e
+# NOTE: set -e désactivé (provoque des plantages silencieux sur && / conditions)
 
 # Couleurs
 RED='\033[0;31m'
@@ -25,7 +28,13 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
+if [ -z "$SCRIPT_DIR" ]; then
+    SCRIPT_DIR="/tmp"
+fi
+
+# URL du repo GitHub (pour téléchargement des scripts si absents localement)
+GITHUB_BASE="https://raw.githubusercontent.com/africa-siem/africa-siem/main/installation"
 
 #---------------------------------------
 # Vérification root
@@ -33,7 +42,28 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ "$EUID" -ne 0 ]; then
     echo -e "${RED}✗ Ce script doit être exécuté avec sudo.${NC}"
     echo ""
-    echo "   Relancez : sudo ./install_module1.sh"
+    echo "   Relancez : sudo ./install_all.sh"
+    exit 1
+fi
+
+#---------------------------------------
+# Vérification terminal interactif
+#---------------------------------------
+if [ ! -t 0 ]; then
+    echo -e "${RED}✗ Ce script nécessite un terminal interactif.${NC}"
+    echo ""
+    echo "   ⚠️  Vous avez probablement lancé via 'curl | sudo bash'."
+    echo ""
+    echo "   Utilisez plutôt l'une de ces méthodes :"
+    echo ""
+    echo "   1. Téléchargez d'abord puis exécutez :"
+    echo "      curl -sL $GITHUB_BASE/install_all.sh -o /tmp/install.sh"
+    echo "      sudo bash /tmp/install.sh"
+    echo ""
+    echo "   2. Ou lancez directement un mode sans menu :"
+    echo "      curl -sL $GITHUB_BASE/install_lite.sh | sudo bash"
+    echo "      curl -sL $GITHUB_BASE/install_full.sh | sudo bash"
+    echo ""
     exit 1
 fi
 
@@ -65,6 +95,7 @@ echo ""
 echo -n "  → Choix [1/2] : "
 read -r LANG_CHOICE
 
+LANG_CODE="fr"
 case "$LANG_CHOICE" in
     2|en|EN) LANG_CODE="en" ;;
     *) LANG_CODE="fr" ;;
@@ -79,7 +110,7 @@ if [ "$LANG_CODE" = "en" ]; then
     T_MODE_CHOICE="INSTALLATION MODE SELECTION"
     T_LITE="Snort + Wazuh Manager only (command-line)"
     T_LITE_REQ="Minimum: 2 GB RAM, 15 GB disk, 1 CPU"
-    T_LITE_USE="Best for: light servers, no web dashboard needed"
+    T_LITE_USE="Best for: light servers, no web dashboard"
     T_FULL="Snort + Wazuh full (Manager + Indexer + Dashboard)"
     T_FULL_REQ="Minimum: 4 GB RAM, 30 GB disk, 2 CPUs"
     T_FULL_USE="Best for: production, web dashboard included"
@@ -87,8 +118,8 @@ if [ "$LANG_CODE" = "en" ]; then
     T_INVALID="Invalid choice. Restart the script."
     T_STARTING="Starting"
     T_INSTALL="installation..."
-    T_NOT_FOUND="not found in"
-    T_MAKE_EXE="Make it executable:"
+    T_NOT_FOUND="not found, downloading..."
+    T_DL_FAILED="Download failed"
 else
     T_MODE_CHOICE="CHOIX DU MODE D'INSTALLATION"
     T_LITE="Snort + Wazuh Manager seul (ligne de commande)"
@@ -101,8 +132,8 @@ else
     T_INVALID="Choix invalide. Relancez le script."
     T_STARTING="Démarrage de l'installation"
     T_INSTALL=""
-    T_NOT_FOUND="introuvable dans"
-    T_MAKE_EXE="Rendez-le exécutable :"
+    T_NOT_FOUND="introuvable, téléchargement..."
+    T_DL_FAILED="Échec du téléchargement"
 fi
 
 #---------------------------------------
@@ -124,14 +155,16 @@ echo -n "  → $T_CHOICE "
 read -r MODE_CHOICE
 echo ""
 
+MODE_NAME=""
+SCRIPT_NAME=""
 case "$MODE_CHOICE" in
     1|lite|LITE)
-        TARGET_SCRIPT="${SCRIPT_DIR}/install_module1_lite.sh"
         MODE_NAME="LITE"
+        SCRIPT_NAME="install_lite.sh"
         ;;
     2|full|FULL)
-        TARGET_SCRIPT="${SCRIPT_DIR}/install_module1_full.sh"
         MODE_NAME="FULL"
+        SCRIPT_NAME="install_full.sh"
         ;;
     *)
         echo -e "${RED}✗ $T_INVALID${NC}"
@@ -140,17 +173,25 @@ case "$MODE_CHOICE" in
 esac
 
 #---------------------------------------
-# Vérification existence du script cible
+# Recherche du script cible (local ou download)
 #---------------------------------------
+TARGET_SCRIPT="${SCRIPT_DIR}/${SCRIPT_NAME}"
+
 if [ ! -f "$TARGET_SCRIPT" ]; then
-    echo -e "${RED}✗ $(basename "$TARGET_SCRIPT") $T_NOT_FOUND $SCRIPT_DIR${NC}"
+    echo -e "${YELLOW}  ℹ  ${SCRIPT_NAME} $T_NOT_FOUND${NC}"
+    TARGET_SCRIPT="/tmp/${SCRIPT_NAME}"
+    if ! curl -sL "${GITHUB_BASE}/${SCRIPT_NAME}" -o "$TARGET_SCRIPT"; then
+        echo -e "${RED}✗ $T_DL_FAILED : ${GITHUB_BASE}/${SCRIPT_NAME}${NC}"
+        exit 1
+    fi
+fi
+
+if [ ! -f "$TARGET_SCRIPT" ]; then
+    echo -e "${RED}✗ ${SCRIPT_NAME} introuvable après téléchargement.${NC}"
     exit 1
 fi
 
-if [ ! -x "$TARGET_SCRIPT" ]; then
-    echo -e "${YELLOW}⚠  $T_MAKE_EXE chmod +x $(basename "$TARGET_SCRIPT")${NC}"
-    chmod +x "$TARGET_SCRIPT"
-fi
+chmod +x "$TARGET_SCRIPT" 2>/dev/null
 
 #---------------------------------------
 # Lancement
@@ -161,6 +202,5 @@ echo -e "${GREEN}═════════════════════
 echo ""
 sleep 1
 
-# Passer la langue au script appelé pour éviter de la redemander
-export LANG_FORCED=1
-exec "$TARGET_SCRIPT" --lang "$LANG_CODE"
+# Lancer le script cible avec la langue en argument
+exec bash "$TARGET_SCRIPT" --lang "$LANG_CODE"
