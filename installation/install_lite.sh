@@ -68,7 +68,10 @@ show_banner() {
     echo -e "${NC}"
 }
 
-#--- CHECKS ---
+#=========================================================================
+# CHECKS PRÉREQUIS (système + installation antérieure)
+#=========================================================================
+
 check_root() {
     log_info "Vérification droits root (UID actuel : $EUID)..."
     if [ "$EUID" -ne 0 ]; then
@@ -142,9 +145,11 @@ check_internet() {
     log_success "Connexion Internet OK"
 }
 
-#--- CLEANUP ---
+#=========================================================================
+# CLEANUP - Nettoyage installation antérieure
+#=========================================================================
 cleanup_all() {
-    log_info "Démarrage nettoyage complet..."
+    log_warning "Démarrage du nettoyage complet..."
     log_info "→ Arrêt des services..."
     systemctl stop snort wazuh-manager filebeat 2>&1 | tee -a "$LOG_FILE"
     systemctl disable snort wazuh-manager filebeat 2>&1 | tee -a "$LOG_FILE"
@@ -170,22 +175,31 @@ cleanup_all() {
     log_success "Nettoyage terminé"
 }
 
-check_existing() {
-    log_info "Recherche installation existante..."
-    log_info "→ Paquets snort/wazuh dans dpkg :"
+check_existing_installation() {
+    log_info "Recherche d'une installation antérieure..."
+    log_info "→ Vérification paquets snort/wazuh dans dpkg :"
     dpkg -l 2>/dev/null | grep -E "snort|wazuh-manager" | tee -a "$LOG_FILE" || echo "  (aucun)"
-    log_info "→ Dossiers /etc/snort, /var/ossec :"
+    log_info "→ Vérification dossiers /etc/snort, /var/ossec :"
     ls -la /etc/snort /var/ossec 2>&1 | tee -a "$LOG_FILE" | head -5
+
     if dpkg -l 2>/dev/null | grep -qE "snort|wazuh-manager" || \
        [ -d "/etc/snort" ] || [ -d "/var/ossec" ]; then
-        log_warning "Installation existante détectée → suppression"
+        echo ""
+        log_warning "═══════════════════════════════════════════════════════════════════"
+        log_warning "  ⚠  INSTALLATION EXISTANTE DÉTECTÉE → NETTOYAGE EN COURS"
+        log_warning "═══════════════════════════════════════════════════════════════════"
+        echo ""
         cleanup_all
+        echo ""
+        log_success "Système prêt pour une nouvelle installation"
     else
-        log_success "Aucune installation existante"
+        log_success "Aucune installation antérieure - système propre"
     fi
 }
 
-#--- UPDATE & DEPS ---
+#=========================================================================
+# UPDATE & DEPS
+#=========================================================================
 update_system() {
     log_step "→" "Mise à jour système"
     log_cmd "apt update"
@@ -214,7 +228,9 @@ install_dependencies() {
     log_success "Dépendances installées"
 }
 
-#--- USERS ---
+#=========================================================================
+# USERS
+#=========================================================================
 create_siem_group_and_users() {
     log_step "1/4" "Création du groupe et users SIEM Africa"
 
@@ -256,7 +272,9 @@ create_siem_group_and_users() {
     log_success "User $SIEM_WAZUH_USER configuré"
 }
 
-#--- SNORT ---
+#=========================================================================
+# SNORT
+#=========================================================================
 install_snort() {
     log_step "2/4" "Installation de Snort"
     INTERFACE=$(ip route | grep default | awk '{print $5}' | head -1)
@@ -323,7 +341,9 @@ EOF
     log_success "Snort configuré (interface=$INTERFACE, HOME_NET=$LOCAL_NET)"
 }
 
-#--- WAZUH MANAGER ---
+#=========================================================================
+# WAZUH MANAGER
+#=========================================================================
 install_wazuh_manager_only() {
     log_step "3/4" "Installation Wazuh Manager (5-10 min)"
 
@@ -369,7 +389,9 @@ install_wazuh_manager_only() {
     log_success "Wazuh Manager installé"
 }
 
-#--- INTÉGRATION ---
+#=========================================================================
+# INTÉGRATION
+#=========================================================================
 configure_integration() {
     log_step "4/4" "Intégration Snort ↔ Wazuh"
     OSSEC_CONF="/var/ossec/etc/ossec.conf"
@@ -389,7 +411,9 @@ configure_integration() {
     log_success "Intégration configurée"
 }
 
-#--- CREDENTIALS ---
+#=========================================================================
+# CREDENTIALS
+#=========================================================================
 create_credentials_file() {
     log_info "Création fichier credentials..."
     SERVER_IP=$(hostname -I | awk '{print $1}')
@@ -449,7 +473,9 @@ EOF
     log_success "Credentials sauvegardés : $CREDENTIALS_FILE"
 }
 
-#--- RÉSUMÉ ---
+#=========================================================================
+# RÉSUMÉ
+#=========================================================================
 show_summary() {
     SERVER_IP=$(hostname -I | awk '{print $1}')
     echo ""
@@ -475,7 +501,9 @@ show_summary() {
     echo ""
 }
 
-#--- MAIN ---
+#=========================================================================
+# MAIN
+#=========================================================================
 main() {
     mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null
     echo "=== SIEM Africa - Module 1 LITE VERBOSE - $(date) ===" > "$LOG_FILE"
@@ -483,8 +511,12 @@ main() {
     parse_args "$@"
     show_banner
 
+    # ─────────────────────────────────────────────────────────────────
+    # PHASE 1 : VÉRIFICATION DES PRÉREQUIS
+    # (système + détection installation antérieure)
+    # ─────────────────────────────────────────────────────────────────
     echo -e "${CYAN}════════════════════════════════════════════════════════════════════${NC}"
-    echo -e "${CYAN}[VÉRIFICATIONS]${NC}"
+    echo -e "${CYAN}[VÉRIFICATION DES PRÉREQUIS]${NC}"
     echo -e "${CYAN}════════════════════════════════════════════════════════════════════${NC}"
     check_root
     check_os
@@ -492,20 +524,21 @@ main() {
     check_disk
     check_cpu
     check_internet
+    check_existing_installation
 
+    # ─────────────────────────────────────────────────────────────────
+    # PHASE 2 : PRÉPARATION SYSTÈME
+    # ─────────────────────────────────────────────────────────────────
     echo ""
     echo -e "${CYAN}════════════════════════════════════════════════════════════════════${NC}"
-    echo -e "${CYAN}[INSTALLATION EXISTANTE]${NC}"
-    echo -e "${CYAN}════════════════════════════════════════════════════════════════════${NC}"
-    check_existing
-
-    echo ""
-    echo -e "${CYAN}════════════════════════════════════════════════════════════════════${NC}"
-    echo -e "${CYAN}[PRÉPARATION]${NC}"
+    echo -e "${CYAN}[PRÉPARATION SYSTÈME]${NC}"
     echo -e "${CYAN}════════════════════════════════════════════════════════════════════${NC}"
     update_system
     install_dependencies
 
+    # ─────────────────────────────────────────────────────────────────
+    # PHASE 3 : INSTALLATION
+    # ─────────────────────────────────────────────────────────────────
     echo ""
     echo -e "${CYAN}════════════════════════════════════════════════════════════════════${NC}"
     echo -e "${CYAN}[INSTALLATION]${NC}"
