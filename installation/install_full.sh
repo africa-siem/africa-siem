@@ -1,85 +1,50 @@
 #!/bin/bash
 #===============================================================================
-#
 #          FILE: install_full.sh
-#
-#   DESCRIPTION: SIEM Africa - Module 1 FULL
-#                Installation complète : Snort + Wazuh (Manager + Indexer + Dashboard)
-#
+#   DESCRIPTION: SIEM Africa - Module 1 FULL (mode VERBOSE)
 #         USAGE: sudo ./install_full.sh [--lang fr|en]
-#
-#       CONFIG MINIMALE : 4 Go RAM, 30 Go disque, 2 cœurs CPU
-#       CONFIG RECOMMANDÉE : 8 Go RAM, 50 Go disque, 4 cœurs CPU
-#
+#       CONFIG : 4 Go RAM, 30 Go disque, 2 cœurs CPU
 #===============================================================================
+# NOTE: set -e DESACTIVE (cause des plantages silencieux sur les conditions &&)
 
-# NOTE: set -e désactivé (provoque des plantages silencieux sur && / conditions)
+#--- COULEURS ---
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
+BLUE='\033[0;34m'; CYAN='\033[0;36m'; MAGENTA='\033[0;35m'
+BOLD='\033[1m'; DIM='\033[2m'; NC='\033[0m'
 
-#---------------------------------------
-# COULEURS
-#---------------------------------------
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-BOLD='\033[1m'
-NC='\033[0m'
-
-#---------------------------------------
-# VARIABLES GLOBALES
-#---------------------------------------
+#--- VARIABLES ---
 LOG_FILE="/var/log/siem-install.log"
 CREDENTIALS_FILE="/root/siem_credentials.txt"
 WAZUH_VERSION="4.7"
 SNORT_CONF="/etc/snort/snort.conf"
-MIN_RAM=4
-MIN_DISK=30
-MIN_CPU=2
-RETRY_COUNT=3
-
+MIN_RAM=4; MIN_DISK=30; MIN_CPU=2; RETRY_COUNT=3
 SIEM_GROUP="siem-africa"
-SIEM_IDS_USER="siem-ids"
-SIEM_WAZUH_USER="siem-wazuh"
-
-SIEM_IDS_PASSWORD=""
-SIEM_WAZUH_PASSWORD=""
-WAZUH_ADMIN_PASSWORD=""
-
+SIEM_IDS_USER="siem-ids"; SIEM_WAZUH_USER="siem-wazuh"
+SIEM_IDS_PASSWORD=""; SIEM_WAZUH_PASSWORD=""; WAZUH_ADMIN_PASSWORD=""
 LANG_CODE="fr"
 
-#---------------------------------------
-# FONCTIONS DE LOG
-#---------------------------------------
+#--- LOG ---
 log()         { echo -e "$1" | tee -a "$LOG_FILE" 2>/dev/null; }
 log_success() { log "${GREEN}[✓]${NC} $1"; }
 log_error()   { log "${RED}[✗]${NC} $1"; }
 log_info()    { log "${CYAN}[i]${NC} $1"; }
 log_warning() { log "${YELLOW}[!]${NC} $1"; }
 log_step()    { log "${BLUE}[STEP $1]${NC} $2"; }
+log_cmd()     { log "${MAGENTA}[CMD]${NC} ${DIM}$1${NC}"; }
+sep()         { echo -e "${DIM}─────────────────────────────────────────────────────────────────${NC}"; }
 
-#---------------------------------------
-# ABORT
-#---------------------------------------
 abort() {
     echo ""
     echo -e "${RED}╔══════════════════════════════════════════════════════════════════╗${NC}"
     echo -e "${RED}║   ✗ INSTALLATION ARRÊTÉE                                       ║${NC}"
     echo -e "${RED}╚══════════════════════════════════════════════════════════════════╝${NC}"
-    echo ""
     echo -e "  ${YELLOW}Raison : $1${NC}"
     echo -e "  Log : $LOG_FILE"
-    echo ""
     exit 1
 }
 
-generate_password() {
-    tr -dc 'A-Za-z0-9' </dev/urandom | head -c 16
-}
+generate_password() { tr -dc 'A-Za-z0-9' </dev/urandom | head -c 16; }
 
-#---------------------------------------
-# PARSE ARGS
-#---------------------------------------
 parse_args() {
     while [ $# -gt 0 ]; do
         case "$1" in
@@ -93,249 +58,236 @@ parse_args() {
     fi
 }
 
-#---------------------------------------
-# BANNER
-#---------------------------------------
 show_banner() {
     clear 2>/dev/null || true
     echo -e "${CYAN}"
     echo "╔══════════════════════════════════════════════════════════════════╗"
-    echo "║                                                                  ║"
-    echo "║         🛡️   SIEM AFRICA - MODULE 1 (FULL)                      ║"
-    echo "║                                                                  ║"
-    echo "║         Snort IDS + Wazuh (Manager + Indexer + Dashboard)        ║"
-    echo "║                                                                  ║"
+    echo "║         🛡️   SIEM AFRICA - MODULE 1 (FULL) - VERBOSE            ║"
+    echo "║         Snort + Wazuh (Manager + Indexer + Dashboard)            ║"
+    echo "║         Mode verbeux : toutes les commandes affichées            ║"
     echo "╚══════════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
-    echo ""
 }
 
-#---------------------------------------
-# CHECKS
-#---------------------------------------
+#--- CHECKS ---
 check_root() {
-    if [ "$EUID" -ne 0 ]; then
-        abort "Ce script doit être exécuté en tant que root (sudo)"
-    fi
+    log_info "Vérification droits root (UID actuel : $EUID)..."
+    if [ "$EUID" -ne 0 ]; then abort "Doit être lancé en root (sudo)"; fi
     log_success "Exécution en tant que root"
 }
 
 check_os() {
-    if [ ! -f /etc/os-release ]; then
-        abort "Impossible de détecter l'OS"
-    fi
-    # shellcheck disable=SC1091
+    log_info "Détection OS..."
+    if [ ! -f /etc/os-release ]; then abort "OS non détecté"; fi
     . /etc/os-release
+    log_info "OS : $ID $VERSION_ID ($PRETTY_NAME)"
     case $ID in
         ubuntu)
             if [ "$VERSION_ID" != "20.04" ] && [ "$VERSION_ID" != "22.04" ] && [ "$VERSION_ID" != "24.04" ]; then
-                abort "Ubuntu $VERSION_ID non supporté (20.04, 22.04, 24.04 uniquement)"
+                abort "Ubuntu $VERSION_ID non supporté"
             fi
-            log_success "OS compatible : Ubuntu $VERSION_ID"
-            ;;
+            log_success "OS compatible : Ubuntu $VERSION_ID" ;;
         debian)
             if [ "$VERSION_ID" != "11" ] && [ "$VERSION_ID" != "12" ]; then
-                abort "Debian $VERSION_ID non supporté (11, 12 uniquement)"
+                abort "Debian $VERSION_ID non supporté"
             fi
-            log_success "OS compatible : Debian $VERSION_ID"
-            ;;
-        *)
-            abort "OS non supporté : $ID (Ubuntu/Debian uniquement)"
-            ;;
+            log_success "OS compatible : Debian $VERSION_ID" ;;
+        *) abort "OS non supporté : $ID" ;;
     esac
 }
 
 check_ram() {
+    log_info "Vérification RAM..."
     TOTAL_RAM=$(free -g | awk '/^Mem:/{print $2}')
-    if [ "$TOTAL_RAM" -lt "$MIN_RAM" ]; then
-        abort "RAM insuffisante : ${TOTAL_RAM}Go (minimum ${MIN_RAM}Go)"
-    fi
+    log_info "RAM : ${TOTAL_RAM} Go (min : ${MIN_RAM} Go)"
+    if [ "$TOTAL_RAM" -lt "$MIN_RAM" ]; then abort "RAM insuffisante"; fi
     log_success "RAM : ${TOTAL_RAM} Go"
 }
 
 check_disk() {
+    log_info "Vérification disque..."
     AVAILABLE=$(df -BG / | awk 'NR==2 {print $4}' | sed 's/G//')
-    if [ "$AVAILABLE" -lt "$MIN_DISK" ]; then
-        abort "Disque insuffisant : ${AVAILABLE}Go (minimum ${MIN_DISK}Go)"
-    fi
-    log_success "Espace disque : ${AVAILABLE} Go"
+    log_info "Disque libre : ${AVAILABLE} Go (min : ${MIN_DISK} Go)"
+    if [ "$AVAILABLE" -lt "$MIN_DISK" ]; then abort "Disque insuffisant"; fi
+    log_success "Disque : ${AVAILABLE} Go"
 }
 
 check_cpu() {
+    log_info "Vérification CPU..."
     CORES=$(nproc)
-    if [ "$CORES" -lt "$MIN_CPU" ]; then
-        abort "CPU insuffisant : ${CORES} cœur(s) (minimum ${MIN_CPU})"
-    fi
-    log_success "Cœurs CPU : ${CORES}"
+    log_info "Cœurs : ${CORES} (min : ${MIN_CPU})"
+    if [ "$CORES" -lt "$MIN_CPU" ]; then abort "CPU insuffisant"; fi
+    log_success "Cœurs : ${CORES}"
 }
 
 check_internet() {
-    log_info "Vérification connexion Internet..."
-    if ! ping -c 3 8.8.8.8 >/dev/null 2>&1; then
-        abort "Pas de connexion Internet"
-    fi
-    if ! ping -c 3 google.com >/dev/null 2>&1; then
-        log_warning "Problème DNS - Correction..."
+    log_info "Test ping 8.8.8.8..."
+    if ! ping -c 3 8.8.8.8; then abort "Pas d'Internet"; fi
+    log_info "Test ping google.com..."
+    if ! ping -c 3 google.com; then
+        log_warning "DNS HS - Application correctif..."
         echo -e "nameserver 8.8.8.8\nnameserver 8.8.4.4" > /etc/resolv.conf
-        if ! ping -c 3 google.com >/dev/null 2>&1; then
-            abort "DNS non fonctionnel"
-        fi
+        if ! ping -c 3 google.com; then abort "DNS non fonctionnel"; fi
     fi
-    if ! curl -s --head --connect-timeout 10 https://packages.wazuh.com >/dev/null 2>&1; then
-        abort "Impossible d'accéder aux dépôts Wazuh"
+    log_info "Test packages.wazuh.com..."
+    if ! curl -sI --connect-timeout 10 https://packages.wazuh.com; then
+        abort "Dépôt Wazuh inaccessible"
     fi
     log_success "Connexion Internet OK"
 }
 
-#---------------------------------------
-# CLEANUP
-#---------------------------------------
+#--- CLEANUP ---
 cleanup_all() {
     log_info "Nettoyage complet..."
-    systemctl stop snort wazuh-manager wazuh-indexer wazuh-dashboard filebeat 2>/dev/null
-    systemctl disable snort wazuh-manager wazuh-indexer wazuh-dashboard filebeat 2>/dev/null
-
-    pkill -9 snort 2>/dev/null
-    pkill -9 -f 'ossec-' 2>/dev/null
-    pkill -9 -f 'wazuh-' 2>/dev/null
-    pkill -9 -f 'opensearch' 2>/dev/null
-    pkill -9 -f 'filebeat' 2>/dev/null
-
+    log_info "→ Arrêt services..."
+    systemctl stop snort wazuh-manager wazuh-indexer wazuh-dashboard filebeat 2>&1 | tee -a "$LOG_FILE"
+    systemctl disable snort wazuh-manager wazuh-indexer wazuh-dashboard filebeat 2>&1 | tee -a "$LOG_FILE"
+    log_info "→ Kill processus..."
+    pkill -9 snort 2>&1 | tee -a "$LOG_FILE"
+    pkill -9 -f 'ossec-' 2>&1 | tee -a "$LOG_FILE"
+    pkill -9 -f 'wazuh-' 2>&1 | tee -a "$LOG_FILE"
+    pkill -9 -f 'opensearch' 2>&1 | tee -a "$LOG_FILE"
+    pkill -9 -f 'filebeat' 2>&1 | tee -a "$LOG_FILE"
+    log_info "→ Suppression paquets..."
+    sep
     DEBIAN_FRONTEND=noninteractive apt remove --purge -y \
         snort snort-common snort-rules-default \
         wazuh-manager wazuh-indexer wazuh-dashboard wazuh-agent \
-        filebeat 2>/dev/null
-
-    rm -rf /var/ossec
-    rm -rf /etc/wazuh-indexer /var/lib/wazuh-indexer /usr/share/wazuh-indexer
+        filebeat 2>&1 | tee -a "$LOG_FILE"
+    sep
+    log_info "→ Suppression dossiers..."
+    rm -rf /var/ossec /etc/wazuh-indexer /var/lib/wazuh-indexer /usr/share/wazuh-indexer
     rm -rf /etc/wazuh-dashboard /usr/share/wazuh-dashboard /var/lib/wazuh-dashboard
     rm -rf /etc/filebeat /var/lib/filebeat /usr/share/filebeat
     rm -rf /etc/snort /var/log/snort /var/run/snort
-
     rm -f /root/wazuh-install.sh /root/wazuh-install-files.tar
     rm -f wazuh-install.sh wazuh-install-files.tar
     rm -f /etc/systemd/system/snort.service
-    rm -f /var/log/wazuh-install.log
-
     systemctl daemon-reload
-    systemctl reset-failed 2>/dev/null
-    DEBIAN_FRONTEND=noninteractive apt autoremove -y 2>/dev/null
-    DEBIAN_FRONTEND=noninteractive apt clean 2>/dev/null
-
+    systemctl reset-failed 2>&1 | tee -a "$LOG_FILE"
+    DEBIAN_FRONTEND=noninteractive apt autoremove -y 2>&1 | tee -a "$LOG_FILE"
     log_success "Nettoyage terminé"
 }
 
 check_existing() {
-    log_info "Vérification installations existantes..."
+    log_info "Recherche installation existante..."
+    log_info "→ Paquets snort/wazuh :"
+    dpkg -l 2>/dev/null | grep -E "snort|wazuh" | tee -a "$LOG_FILE" || echo "  (aucun)"
     if dpkg -l 2>/dev/null | grep -qE "snort|wazuh" || \
-       [ -d "/etc/snort" ] || \
-       [ -d "/var/ossec" ] || \
-       [ -d "/etc/wazuh-indexer" ]; then
-        log_warning "Installation existante détectée → suppression et réinstallation"
+       [ -d "/etc/snort" ] || [ -d "/var/ossec" ] || [ -d "/etc/wazuh-indexer" ]; then
+        log_warning "Installation existante détectée → suppression"
         cleanup_all
     else
         log_success "Aucune installation existante"
     fi
 }
 
-#---------------------------------------
-# UPDATE & DEPS
-#---------------------------------------
+#--- UPDATE & DEPS ---
 update_system() {
-    log_info "Mise à jour système..."
-    if ! apt update -qq 2>&1 | tee -a "$LOG_FILE" >/dev/null; then
-        abort "Échec apt update"
-    fi
-    DEBIAN_FRONTEND=noninteractive apt upgrade -y -qq 2>&1 | tee -a "$LOG_FILE" >/dev/null
+    log_step "→" "Mise à jour système"
+    log_cmd "apt update"
+    sep
+    apt update 2>&1 | tee -a "$LOG_FILE"
+    if [ "${PIPESTATUS[0]}" -ne 0 ]; then sep; abort "Échec apt update"; fi
+    sep
+    log_cmd "apt upgrade -y"
+    sep
+    DEBIAN_FRONTEND=noninteractive apt upgrade -y 2>&1 | tee -a "$LOG_FILE"
+    sep
     log_success "Système mis à jour"
 }
 
 install_dependencies() {
-    log_info "Installation des dépendances..."
-    if ! DEBIAN_FRONTEND=noninteractive apt install -y -qq \
+    log_step "→" "Installation dépendances"
+    log_cmd "apt install curl wget gnupg ..."
+    sep
+    DEBIAN_FRONTEND=noninteractive apt install -y \
         curl wget gnupg apt-transport-https lsb-release ca-certificates \
-        software-properties-common net-tools jq iproute2 \
-        2>&1 | tee -a "$LOG_FILE" >/dev/null; then
-        abort "Échec installation dépendances"
-    fi
+        software-properties-common net-tools jq iproute2 2>&1 | tee -a "$LOG_FILE"
+    if [ "${PIPESTATUS[0]}" -ne 0 ]; then sep; abort "Échec dépendances"; fi
+    sep
     log_success "Dépendances installées"
 }
 
-#---------------------------------------
-# GROUPE + USERS
-#---------------------------------------
+#--- USERS ---
 create_siem_group_and_users() {
-    log_step "1/5" "Création du groupe et des users SIEM Africa..."
+    log_step "1/5" "Création groupe et users SIEM Africa"
 
+    log_info "→ Groupe $SIEM_GROUP..."
     if ! getent group "$SIEM_GROUP" >/dev/null 2>&1; then
-        if ! groupadd "$SIEM_GROUP"; then
-            abort "Impossible de créer le groupe $SIEM_GROUP"
-        fi
+        log_cmd "groupadd $SIEM_GROUP"
+        if ! groupadd "$SIEM_GROUP"; then abort "Création groupe impossible"; fi
+        log_success "Groupe créé"
+    else
+        log_info "Groupe existe déjà"
     fi
 
+    log_info "→ User $SIEM_IDS_USER..."
     SIEM_IDS_PASSWORD=$(generate_password)
     if ! id "$SIEM_IDS_USER" >/dev/null 2>&1; then
+        log_cmd "useradd -m -s /bin/bash -g $SIEM_GROUP $SIEM_IDS_USER"
         if ! useradd -m -s /bin/bash -g "$SIEM_GROUP" "$SIEM_IDS_USER"; then
-            abort "Impossible de créer $SIEM_IDS_USER"
+            abort "Création $SIEM_IDS_USER impossible"
         fi
     else
         usermod -g "$SIEM_GROUP" "$SIEM_IDS_USER"
     fi
     echo "$SIEM_IDS_USER:$SIEM_IDS_PASSWORD" | chpasswd
     usermod -aG sudo "$SIEM_IDS_USER" 2>/dev/null
+    log_success "$SIEM_IDS_USER configuré"
 
+    log_info "→ User $SIEM_WAZUH_USER..."
     SIEM_WAZUH_PASSWORD=$(generate_password)
     if ! id "$SIEM_WAZUH_USER" >/dev/null 2>&1; then
+        log_cmd "useradd -m -s /bin/bash -g $SIEM_GROUP $SIEM_WAZUH_USER"
         if ! useradd -m -s /bin/bash -g "$SIEM_GROUP" "$SIEM_WAZUH_USER"; then
-            abort "Impossible de créer $SIEM_WAZUH_USER"
+            abort "Création $SIEM_WAZUH_USER impossible"
         fi
     else
         usermod -g "$SIEM_GROUP" "$SIEM_WAZUH_USER"
     fi
     echo "$SIEM_WAZUH_USER:$SIEM_WAZUH_PASSWORD" | chpasswd
     usermod -aG sudo "$SIEM_WAZUH_USER" 2>/dev/null
-
-    log_success "Groupe et users créés"
-    log_info "  - Groupe : $SIEM_GROUP"
-    log_info "  - Users  : $SIEM_IDS_USER, $SIEM_WAZUH_USER"
+    log_success "$SIEM_WAZUH_USER configuré"
 }
 
-#---------------------------------------
-# SNORT
-#---------------------------------------
+#--- SNORT ---
 install_snort() {
-    log_step "2/5" "Installation de Snort..."
+    log_step "2/5" "Installation Snort"
     INTERFACE=$(ip route | grep default | awk '{print $5}' | head -1)
-    if [ -z "$INTERFACE" ]; then
-        INTERFACE="eth0"
-    fi
+    if [ -z "$INTERFACE" ]; then INTERFACE="eth0"; fi
+    log_info "Interface : $INTERFACE"
+
     echo "snort snort/interface string $INTERFACE" | debconf-set-selections
     echo "snort snort/address_range string any/any" | debconf-set-selections
     echo "snort snort/startup string boot" | debconf-set-selections
-    if ! DEBIAN_FRONTEND=noninteractive apt install -y snort 2>&1 | tee -a "$LOG_FILE" >/dev/null; then
-        abort "Impossible d'installer Snort"
-    fi
+
+    log_cmd "apt install -y snort"
+    sep
+    DEBIAN_FRONTEND=noninteractive apt install -y snort 2>&1 | tee -a "$LOG_FILE"
+    if [ "${PIPESTATUS[0]}" -ne 0 ]; then sep; abort "Échec install Snort"; fi
+    sep
     log_success "Snort installé"
 }
 
 configure_snort() {
-    log_info "Configuration de Snort..."
+    log_info "Config Snort..."
     LOCAL_NET=$(ip route | grep -oP 'src \K[\d.]+' | head -1 | sed 's/\.[0-9]*$/.0\/24/')
-    if [ -z "$LOCAL_NET" ]; then
-        LOCAL_NET="192.168.1.0/24"
-    fi
+    if [ -z "$LOCAL_NET" ]; then LOCAL_NET="192.168.1.0/24"; fi
+    log_info "Réseau local : $LOCAL_NET"
+
     if [ -f "$SNORT_CONF" ]; then
         sed -i "s|ipvar HOME_NET any|ipvar HOME_NET $LOCAL_NET|g" "$SNORT_CONF"
         sed -i "s|var HOME_NET any|var HOME_NET $LOCAL_NET|g" "$SNORT_CONF"
+        grep -E "^(ipvar|var) HOME_NET" "$SNORT_CONF" | tee -a "$LOG_FILE"
     fi
-    mkdir -p /var/log/snort /etc/snort/rules
+
+    mkdir -pv /var/log/snort /etc/snort/rules 2>&1 | tee -a "$LOG_FILE"
     chown -R "$SIEM_IDS_USER":"$SIEM_GROUP" /var/log/snort /etc/snort 2>/dev/null
     chmod 770 /var/log/snort
 
     INTERFACE=$(ip route | grep default | awk '{print $5}' | head -1)
-    if [ -z "$INTERFACE" ]; then
-        INTERFACE="eth0"
-    fi
+    if [ -z "$INTERFACE" ]; then INTERFACE="eth0"; fi
 
     cat > /etc/systemd/system/snort.service <<EOF
 [Unit]
@@ -354,87 +306,78 @@ WantedBy=multi-user.target
 EOF
 
     systemctl daemon-reload
-    systemctl enable snort 2>/dev/null
-    systemctl start snort 2>/dev/null
-
-    log_success "Snort configuré - Interface: $INTERFACE, HOME_NET: $LOCAL_NET"
+    systemctl enable snort 2>&1 | tee -a "$LOG_FILE"
+    systemctl start snort 2>&1 | tee -a "$LOG_FILE"
+    sleep 2
+    systemctl status snort --no-pager 2>&1 | tee -a "$LOG_FILE" | head -10
+    log_success "Snort configuré"
 }
 
-#---------------------------------------
-# WAZUH (avec retry)
-#---------------------------------------
+#--- WAZUH ALL-IN-ONE ---
 install_wazuh() {
-    log_step "3/5" "Installation de Wazuh $WAZUH_VERSION (10-20 minutes)..."
+    log_step "3/5" "Installation Wazuh $WAZUH_VERSION (10-20 min)"
 
     cd /root 2>/dev/null || cd /tmp
+    log_info "→ Téléchargement wazuh-install.sh..."
     if ! curl -sO "https://packages.wazuh.com/${WAZUH_VERSION}/wazuh-install.sh"; then
-        abort "Impossible de télécharger Wazuh"
+        abort "Téléchargement Wazuh échoué"
     fi
     chmod +x wazuh-install.sh
+    log_success "Script Wazuh téléchargé"
 
     local attempt=1
     local success=false
 
     while [ "$attempt" -le "$RETRY_COUNT" ]; do
-        log_info "Tentative $attempt/$RETRY_COUNT..."
+        log_info "→ Tentative $attempt/$RETRY_COUNT..."
+        log_cmd "bash wazuh-install.sh -a -i"
+        sep
+        bash wazuh-install.sh -a -i 2>&1 | tee -a "$LOG_FILE"
+        local rc=${PIPESTATUS[0]}
+        sep
 
-        if bash wazuh-install.sh -a -i >> "$LOG_FILE" 2>&1; then
+        if [ "$rc" -eq 0 ]; then
             success=true
             break
         fi
 
         log_warning "Tentative $attempt échouée"
-
         if [ "$attempt" -lt "$RETRY_COUNT" ]; then
+            log_info "→ Cleanup partiel avant retry..."
             systemctl stop wazuh-manager wazuh-indexer wazuh-dashboard 2>/dev/null
             apt remove --purge -y wazuh-manager wazuh-indexer wazuh-dashboard 2>/dev/null
             rm -rf /var/ossec /etc/wazuh-indexer /var/lib/wazuh-indexer wazuh-install-files.tar
             sleep 5
         fi
-
         attempt=$((attempt + 1))
     done
 
-    if [ "$success" = false ]; then
-        abort "Installation Wazuh échouée après $RETRY_COUNT tentatives"
-    fi
-
+    if [ "$success" = false ]; then abort "Wazuh échoué après $RETRY_COUNT tentatives"; fi
     log_success "Wazuh installé"
 
-    if [ -f "wazuh-install-files.tar" ]; then
-        cp wazuh-install-files.tar /root/
-    fi
-
+    if [ -f "wazuh-install-files.tar" ]; then cp wazuh-install-files.tar /root/; fi
     if id wazuh >/dev/null 2>&1; then
         usermod -aG "$SIEM_GROUP" wazuh 2>/dev/null
     fi
 }
 
-#---------------------------------------
-# INTÉGRATION
-#---------------------------------------
+#--- INTÉGRATION ---
 configure_integration() {
-    log_step "4/5" "Configuration intégration Snort ↔ Wazuh..."
-
+    log_step "4/5" "Intégration Snort ↔ Wazuh"
     OSSEC_CONF="/var/ossec/etc/ossec.conf"
-    if [ ! -f "$OSSEC_CONF" ]; then
-        abort "ossec.conf introuvable"
-    fi
-
+    if [ ! -f "$OSSEC_CONF" ]; then abort "ossec.conf absent"; fi
     if ! grep -q "/var/log/snort/alert" "$OSSEC_CONF"; then
+        log_info "→ Ajout localfile Snort..."
         sed -i '/<\/ossec_config>/i \  <localfile>\n    <log_format>snort-full</log_format>\n    <location>/var/log/snort/alert</location>\n  </localfile>' "$OSSEC_CONF"
+        log_success "Bloc localfile ajouté"
     fi
-
-    if ! systemctl restart wazuh-manager 2>&1 | tee -a "$LOG_FILE" >/dev/null; then
-        abort "Impossible de redémarrer wazuh-manager"
-    fi
-
+    log_info "→ Restart wazuh-manager..."
+    systemctl restart wazuh-manager 2>&1 | tee -a "$LOG_FILE"
+    if ! systemctl is-active --quiet wazuh-manager; then abort "Wazuh n'a pas redémarré"; fi
     log_success "Intégration configurée"
 }
 
-#---------------------------------------
-# EXTRACTION PASSWORD ADMIN WAZUH
-#---------------------------------------
+#--- EXTRACTION PASSWORD ADMIN ---
 extract_wazuh_admin_password() {
     WAZUH_ADMIN_PASSWORD="Voir /root/wazuh-install-files.tar"
     if [ -f "/root/wazuh-install-files.tar" ]; then
@@ -443,34 +386,23 @@ extract_wazuh_admin_password() {
         if [ -f "/tmp/wazuh-extract/wazuh-install-files/wazuh-passwords.txt" ]; then
             EXTRACTED=$(grep -A1 "'admin'" /tmp/wazuh-extract/wazuh-install-files/wazuh-passwords.txt 2>/dev/null | \
                 grep "password" | head -1 | sed "s/.*password: '//" | sed "s/'.*//")
-            if [ -n "$EXTRACTED" ]; then
-                WAZUH_ADMIN_PASSWORD="$EXTRACTED"
-            fi
+            if [ -n "$EXTRACTED" ]; then WAZUH_ADMIN_PASSWORD="$EXTRACTED"; fi
         fi
         rm -rf /tmp/wazuh-extract
     fi
 }
 
-#---------------------------------------
-# CREDENTIALS FILE
-#---------------------------------------
+#--- CREDENTIALS ---
 create_credentials_file() {
-    log_step "5/5" "Création du fichier credentials..."
-
+    log_step "5/5" "Création fichier credentials"
     extract_wazuh_admin_password
 
     SERVER_IP=$(hostname -I | awk '{print $1}')
-    HOSTNAME=$(hostname)
     DATE=$(date '+%Y-%m-%d %H:%M:%S')
     INTERFACE=$(ip route | grep default | awk '{print $5}' | head -1)
     LOCAL_NET=$(ip route | grep -oP 'src \K[\d.]+' | head -1 | sed 's/\.[0-9]*$/.0\/24/')
     if [ -z "$INTERFACE" ]; then INTERFACE="eth0"; fi
     if [ -z "$LOCAL_NET" ]; then LOCAL_NET="192.168.1.0/24"; fi
-
-    LANG_DISPLAY="Français"
-    if [ "$LANG_CODE" = "en" ]; then
-        LANG_DISPLAY="English"
-    fi
 
     cat > "$CREDENTIALS_FILE" <<EOF
 ╔══════════════════════════════════════════════════════════════════╗
@@ -478,140 +410,70 @@ create_credentials_file() {
 ║                     MODULE 1 - FULL                              ║
 ╚══════════════════════════════════════════════════════════════════╝
 
-Date installation : $DATE
-Mode              : FULL (Snort + Wazuh Manager + Indexer + Dashboard)
+Date              : $DATE
+Mode              : FULL (Snort + Wazuh complet)
 Serveur IP        : $SERVER_IP
-Hostname          : $HOSTNAME
-Langue            : $LANG_DISPLAY
+Hostname          : $(hostname)
 
 ══════════════════════════════════════════════════════════════════
 USERS SYSTÈME
 ══════════════════════════════════════════════════════════════════
-Username   : $SIEM_IDS_USER
-Password   : $SIEM_IDS_PASSWORD
-Sudo       : oui
-Rôle       : Gestion Snort IDS
-
-Username   : $SIEM_WAZUH_USER
-Password   : $SIEM_WAZUH_PASSWORD
-Sudo       : oui
-Rôle       : Gestion Wazuh SIEM
-
-══════════════════════════════════════════════════════════════════
-GROUPE PARTAGÉ
-══════════════════════════════════════════════════════════════════
-Nom        : $SIEM_GROUP
-Usage      : Partage des permissions entre Module 2, 3, 4
-Membres    : $SIEM_IDS_USER, $SIEM_WAZUH_USER, wazuh
+$SIEM_IDS_USER     / $SIEM_IDS_PASSWORD     (sudo) - Snort
+$SIEM_WAZUH_USER  / $SIEM_WAZUH_PASSWORD  (sudo) - Wazuh
+Groupe            : $SIEM_GROUP
 
 ══════════════════════════════════════════════════════════════════
 WAZUH DASHBOARD
 ══════════════════════════════════════════════════════════════════
 URL        : https://$SERVER_IP
-Username   : admin
+User       : admin
 Password   : $WAZUH_ADMIN_PASSWORD
 
-Certificat : Auto-signé (accepter dans le navigateur)
-
 ══════════════════════════════════════════════════════════════════
-SNORT IDS
+SNORT
 ══════════════════════════════════════════════════════════════════
 Interface  : $INTERFACE
 Home Net   : $LOCAL_NET
-Config     : /etc/snort/snort.conf
 Logs       : /var/log/snort/alert
-Service    : systemctl status snort
 
 ══════════════════════════════════════════════════════════════════
-WAZUH SIEM
+PORTS
 ══════════════════════════════════════════════════════════════════
-Manager    : systemctl status wazuh-manager
-Indexer    : systemctl status wazuh-indexer
-Dashboard  : systemctl status wazuh-dashboard
-Config     : /var/ossec/etc/ossec.conf
-Logs       : /var/ossec/logs/ossec.log
-Alertes    : /var/ossec/logs/alerts/alerts.json
-
-══════════════════════════════════════════════════════════════════
-PORTS UTILISÉS
-══════════════════════════════════════════════════════════════════
-443   - Wazuh Dashboard (HTTPS)
-1514  - Wazuh Agent communication
-1515  - Wazuh Agent enrollment
-9200  - Wazuh Indexer (OpenSearch)
+443   - Wazuh Dashboard
+1514  - Wazuh Agent
+1515  - Wazuh Enrollment
+9200  - Wazuh Indexer
 55000 - Wazuh API
 
 ══════════════════════════════════════════════════════════════════
-FICHIERS IMPORTANTS
+COMMANDES UTILES
 ══════════════════════════════════════════════════════════════════
-$CREDENTIALS_FILE       - Ce fichier (lecture via 'cat')
-/root/wazuh-install-files.tar    - Backup des fichiers Wazuh
-/var/log/siem-install.log        - Log d'installation complet
-
-══════════════════════════════════════════════════════════════════
-COMMANDES DE VÉRIFICATION
-══════════════════════════════════════════════════════════════════
-État des services :
-  sudo systemctl status snort wazuh-manager wazuh-indexer wazuh-dashboard
-
-Test Dashboard :
-  curl -k -s -o /dev/null -w '%{http_code}' https://localhost
-
-Vérifier les ports :
-  sudo ss -tlnp | grep -E '443|1514|1515|9200|55000'
-
-Suivre les alertes en temps réel :
-  sudo tail -f /var/log/snort/alert
-  sudo tail -f /var/ossec/logs/alerts/alerts.json
-
-══════════════════════════════════════════════════════════════════
-⚠️  SÉCURITÉ
-══════════════════════════════════════════════════════════════════
-- Ce fichier contient des mots de passe : protégez-le (chmod 600)
-- Changez tous les mots de passe en production
-- Le certificat SSL est auto-signé : utilisez un vrai cert en prod
-
-══════════════════════════════════════════════════════════════════
+sudo systemctl status snort wazuh-manager wazuh-indexer wazuh-dashboard
+sudo tail -f /var/ossec/logs/alerts/alerts.json
 EOF
 
     chmod 600 "$CREDENTIALS_FILE"
-    log_success "Credentials sauvegardés dans $CREDENTIALS_FILE"
+    log_success "Credentials sauvegardés : $CREDENTIALS_FILE"
 }
 
-#---------------------------------------
-# RÉSUMÉ FINAL
-#---------------------------------------
+#--- RÉSUMÉ ---
 show_summary() {
     SERVER_IP=$(hostname -I | awk '{print $1}')
-
     echo ""
     echo -e "${GREEN}╔══════════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${GREEN}║   ✓ INSTALLATION FULL TERMINÉE AVEC SUCCÈS                     ║${NC}"
+    echo -e "${GREEN}║   ✓ INSTALLATION FULL TERMINÉE                                 ║${NC}"
     echo -e "${GREEN}╚══════════════════════════════════════════════════════════════════╝${NC}"
     echo ""
-
-    echo -e "${CYAN}═══════════════════════════════════════════════════════════════════${NC}"
-    echo -e "${CYAN}                   ACCÈS AU DASHBOARD WAZUH                        ${NC}"
-    echo -e "${CYAN}═══════════════════════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}DASHBOARD WAZUH${NC}"
+    echo -e "  URL      : ${GREEN}https://${SERVER_IP}${NC}"
+    echo -e "  User     : ${YELLOW}admin${NC}"
+    echo -e "  Password : ${YELLOW}$WAZUH_ADMIN_PASSWORD${NC}"
     echo ""
-    echo -e "  URL        : ${GREEN}https://${SERVER_IP}${NC}"
-    echo -e "  User       : ${YELLOW}admin${NC}"
-    echo -e "  Password   : ${YELLOW}$WAZUH_ADMIN_PASSWORD${NC}"
+    echo -e "${CYAN}USERS${NC}"
+    echo -e "  • ${YELLOW}$SIEM_IDS_USER${NC}    / ${GREEN}$SIEM_IDS_PASSWORD${NC}"
+    echo -e "  • ${YELLOW}$SIEM_WAZUH_USER${NC}  / ${GREEN}$SIEM_WAZUH_PASSWORD${NC}"
     echo ""
-
-    echo -e "${CYAN}═══════════════════════════════════════════════════════════════════${NC}"
-    echo -e "${CYAN}                   UTILISATEURS CRÉÉS                              ${NC}"
-    echo -e "${CYAN}═══════════════════════════════════════════════════════════════════${NC}"
-    echo ""
-    echo -e "  • ${YELLOW}$SIEM_IDS_USER${NC}    / ${GREEN}$SIEM_IDS_PASSWORD${NC}    (sudo)"
-    echo -e "  • ${YELLOW}$SIEM_WAZUH_USER${NC}  / ${GREEN}$SIEM_WAZUH_PASSWORD${NC}  (sudo)"
-    echo -e "  • Groupe   : ${YELLOW}$SIEM_GROUP${NC}"
-    echo ""
-
-    echo -e "${CYAN}═══════════════════════════════════════════════════════════════════${NC}"
-    echo -e "${CYAN}                   ÉTAT DES SERVICES                               ${NC}"
-    echo -e "${CYAN}═══════════════════════════════════════════════════════════════════${NC}"
-    echo ""
+    echo -e "${CYAN}SERVICES${NC}"
     for service in snort wazuh-manager wazuh-indexer wazuh-dashboard; do
         if systemctl is-active --quiet "$service" 2>/dev/null; then
             echo -e "  $service : ${GREEN}● Actif${NC}"
@@ -620,66 +482,47 @@ show_summary() {
         fi
     done
     echo ""
-
-    echo -e "${CYAN}═══════════════════════════════════════════════════════════════════${NC}"
-    echo -e "${CYAN}                   FICHIER CREDENTIALS                             ${NC}"
-    echo -e "${CYAN}═══════════════════════════════════════════════════════════════════${NC}"
-    echo ""
-    echo -e "  Tous les mots de passe : ${YELLOW}$CREDENTIALS_FILE${NC}"
-    echo -e "  Pour afficher          : ${GREEN}sudo cat $CREDENTIALS_FILE${NC}"
-    echo ""
-
-    echo -e "${YELLOW}  ⚠️  Note : Le certificat SSL est auto-signé.${NC}"
+    echo -e "${CYAN}CREDENTIALS${NC}"
+    echo -e "  ${GREEN}sudo cat $CREDENTIALS_FILE${NC}"
     echo ""
 }
 
-#---------------------------------------
-# MAIN
-#---------------------------------------
+#--- MAIN ---
 main() {
     mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null
-    echo "=== SIEM Africa - Module 1 FULL - $(date) ===" > "$LOG_FILE"
+    echo "=== SIEM Africa - Module 1 FULL VERBOSE - $(date) ===" > "$LOG_FILE"
 
     parse_args "$@"
     show_banner
 
-    echo -e "${CYAN}[VÉRIFICATIONS OBLIGATOIRES]${NC}"
-    echo "─────────────────────────────────────────────────────────────────"
-    check_root
-    check_os
-    check_ram
-    check_disk
-    check_cpu
-    check_internet
-    echo ""
+    echo -e "${CYAN}════════════════════════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}[VÉRIFICATIONS]${NC}"
+    echo -e "${CYAN}════════════════════════════════════════════════════════════════════${NC}"
+    check_root; check_os; check_ram; check_disk; check_cpu; check_internet
 
-    echo -e "${CYAN}[VÉRIFICATION INSTALLATION EXISTANTE]${NC}"
-    echo "─────────────────────────────────────────────────────────────────"
+    echo ""
+    echo -e "${CYAN}════════════════════════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}[INSTALLATION EXISTANTE]${NC}"
+    echo -e "${CYAN}════════════════════════════════════════════════════════════════════${NC}"
     check_existing
-    echo ""
 
-    echo -e "${CYAN}[PRÉPARATION SYSTÈME]${NC}"
-    echo "─────────────────────────────────────────────────────────────────"
-    update_system
-    install_dependencies
     echo ""
+    echo -e "${CYAN}════════════════════════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}[PRÉPARATION]${NC}"
+    echo -e "${CYAN}════════════════════════════════════════════════════════════════════${NC}"
+    update_system; install_dependencies
 
+    echo ""
+    echo -e "${CYAN}════════════════════════════════════════════════════════════════════${NC}"
     echo -e "${CYAN}[INSTALLATION]${NC}"
-    echo "─────────────────────────────────────────────────────────────────"
+    echo -e "${CYAN}════════════════════════════════════════════════════════════════════${NC}"
     create_siem_group_and_users
-    echo ""
-    install_snort
-    configure_snort
-    echo ""
+    install_snort; configure_snort
     install_wazuh
-    echo ""
     configure_integration
-    echo ""
     create_credentials_file
-    echo ""
 
     show_summary
-
     log_info "Installation FULL terminée - $(date)"
 }
 
