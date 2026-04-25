@@ -1,11 +1,11 @@
 #!/bin/bash
 #===============================================================================
 #          FILE: install_full.sh
-#   DESCRIPTION: SIEM Africa - Module 1 FULL (mode VERBOSE)
+#   DESCRIPTION: SIEM Africa - Module 1 FULL (mode VERBOSE + port-aware)
 #         USAGE: sudo ./install_full.sh [--lang fr|en]
 #       CONFIG : 4 Go RAM, 30 Go disque, 2 cœurs CPU
 #===============================================================================
-# NOTE: set -e DESACTIVE (cause des plantages silencieux sur les conditions &&)
+# NOTE: set -e DESACTIVE
 
 #--- COULEURS ---
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
@@ -22,6 +22,9 @@ SIEM_GROUP="siem-africa"
 SIEM_IDS_USER="siem-ids"; SIEM_WAZUH_USER="siem-wazuh"
 SIEM_IDS_PASSWORD=""; SIEM_WAZUH_PASSWORD=""; WAZUH_ADMIN_PASSWORD=""
 LANG_CODE="fr"
+
+# Ports Wazuh à libérer (FULL utilise 443, 1514, 1515, 9200, 9300, 9600, 55000)
+WAZUH_PORTS=(443 1514 1515 9200 9300 9600 55000)
 
 #--- LOG ---
 log()         { echo -e "$1" | tee -a "$LOG_FILE" 2>/dev/null; }
@@ -64,7 +67,7 @@ show_banner() {
     echo "╔══════════════════════════════════════════════════════════════════╗"
     echo "║         🛡️   SIEM AFRICA - MODULE 1 (FULL) - VERBOSE            ║"
     echo "║         Snort + Wazuh (Manager + Indexer + Dashboard)            ║"
-    echo "║         Mode verbeux : toutes les commandes affichées            ║"
+    echo "║         Cleanup port-aware activé                                ║"
     echo "╚══════════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
 }
@@ -139,19 +142,67 @@ check_internet() {
 }
 
 #=========================================================================
-# CLEANUP
+# CLEANUP PORT-AWARE
 #=========================================================================
+
+# Tue tout processus écoutant sur un port donné
+kill_port() {
+    local port=$1
+    local pids
+    pids=$(ss -tlnp 2>/dev/null | awk -v p=":$port" '$4 ~ p {print $NF}' | grep -oP 'pid=\K[0-9]+' | sort -u)
+    if [ -z "$pids" ]; then
+        pids=$(lsof -ti tcp:"$port" 2>/dev/null)
+    fi
+    if [ -n "$pids" ]; then
+        log_warning "  → Port $port occupé par PID(s) : $pids - kill -9..."
+        for pid in $pids; do
+            kill -9 "$pid" 2>/dev/null && log_info "    PID $pid tué"
+        done
+        fuser -k "${port}/tcp" 2>&1 | tee -a "$LOG_FILE"
+        sleep 1
+    fi
+}
+
+ensure_port_free() {
+    local port=$1
+    if ss -tlnp 2>/dev/null | awk -v p=":$port" '$4 ~ p' | grep -q "."; then
+        log_error "  Port $port toujours occupé après cleanup !"
+        ss -tlnp 2>/dev/null | grep ":$port "
+        return 1
+    fi
+    return 0
+}
+
 cleanup_all() {
     log_warning "Nettoyage complet en cours..."
+
     log_info "→ Arrêt services..."
     systemctl stop snort wazuh-manager wazuh-indexer wazuh-dashboard filebeat 2>&1 | tee -a "$LOG_FILE"
     systemctl disable snort wazuh-manager wazuh-indexer wazuh-dashboard filebeat 2>&1 | tee -a "$LOG_FILE"
-    log_info "→ Kill processus..."
+
+    log_info "→ Kill processus par nom..."
     pkill -9 snort 2>&1 | tee -a "$LOG_FILE"
     pkill -9 -f 'ossec-' 2>&1 | tee -a "$LOG_FILE"
     pkill -9 -f 'wazuh-' 2>&1 | tee -a "$LOG_FILE"
     pkill -9 -f 'opensearch' 2>&1 | tee -a "$LOG_FILE"
     pkill -9 -f 'filebeat' 2>&1 | tee -a "$LOG_FILE"
+    sleep 2
+
+    log_info "→ Libération des ports Wazuh (port-aware cleanup)..."
+    for port in "${WAZUH_PORTS[@]}"; do
+        kill_port "$port"
+    done
+    sleep 2
+
+    log_info "→ Vérification que les ports sont libres..."
+    for port in "${WAZUH_PORTS[@]}"; do
+        if ensure_port_free "$port"; then
+            log_info "  ✓ Port $port libre"
+        else
+            log_warning "  ⚠ Port $port encore occupé"
+        fi
+    done
+
     log_info "→ Suppression paquets..."
     sep
     DEBIAN_FRONTEND=noninteractive apt remove --purge -y \
@@ -159,6 +210,7 @@ cleanup_all() {
         wazuh-manager wazuh-indexer wazuh-dashboard wazuh-agent \
         filebeat 2>&1 | tee -a "$LOG_FILE"
     sep
+
     log_info "→ Suppression dossiers..."
     rm -rf /var/ossec /etc/wazuh-indexer /var/lib/wazuh-indexer /usr/share/wazuh-indexer
     rm -rf /etc/wazuh-dashboard /usr/share/wazuh-dashboard /var/lib/wazuh-dashboard
@@ -167,6 +219,7 @@ cleanup_all() {
     rm -f /root/wazuh-install.sh /root/wazuh-install-files.tar
     rm -f wazuh-install.sh wazuh-install-files.tar
     rm -f /etc/systemd/system/snort.service
+
     systemctl daemon-reload
     systemctl reset-failed 2>&1 | tee -a "$LOG_FILE"
     DEBIAN_FRONTEND=noninteractive apt autoremove -y 2>&1 | tee -a "$LOG_FILE"
@@ -179,12 +232,21 @@ check_existing_installation() {
     dpkg -l 2>/dev/null | grep -E "snort|wazuh" | tee -a "$LOG_FILE" || echo "  (aucun)"
     log_info "→ Vérification dossiers /etc/snort, /var/ossec, /etc/wazuh-indexer :"
     ls -la /etc/snort /var/ossec /etc/wazuh-indexer 2>&1 | tee -a "$LOG_FILE" | head -10
+    log_info "→ Vérification ports Wazuh occupés :"
+    PORTS_BUSY=false
+    for port in "${WAZUH_PORTS[@]}"; do
+        if ss -tlnp 2>/dev/null | grep -q ":$port "; then
+            log_warning "  Port $port occupé"
+            PORTS_BUSY=true
+        fi
+    done
 
     if dpkg -l 2>/dev/null | grep -qE "snort|wazuh" || \
-       [ -d "/etc/snort" ] || [ -d "/var/ossec" ] || [ -d "/etc/wazuh-indexer" ]; then
+       [ -d "/etc/snort" ] || [ -d "/var/ossec" ] || [ -d "/etc/wazuh-indexer" ] || \
+       [ "$PORTS_BUSY" = true ]; then
         echo ""
         log_warning "═══════════════════════════════════════════════════════════════════"
-        log_warning "  ⚠  INSTALLATION EXISTANTE DÉTECTÉE → NETTOYAGE EN COURS"
+        log_warning "  ⚠  INSTALLATION EXISTANTE OU PORTS OCCUPÉS → NETTOYAGE EN COURS"
         log_warning "═══════════════════════════════════════════════════════════════════"
         echo ""
         cleanup_all
@@ -214,11 +276,11 @@ update_system() {
 
 install_dependencies() {
     log_step "→" "Installation dépendances"
-    log_cmd "apt install curl wget gnupg ..."
+    log_cmd "apt install curl wget gnupg lsof psmisc ..."
     sep
     DEBIAN_FRONTEND=noninteractive apt install -y \
         curl wget gnupg apt-transport-https lsb-release ca-certificates \
-        software-properties-common net-tools jq iproute2 2>&1 | tee -a "$LOG_FILE"
+        software-properties-common net-tools jq iproute2 lsof psmisc 2>&1 | tee -a "$LOG_FILE"
     if [ "${PIPESTATUS[0]}" -ne 0 ]; then sep; abort "Échec dépendances"; fi
     sep
     log_success "Dépendances installées"
@@ -333,7 +395,7 @@ EOF
 }
 
 #=========================================================================
-# WAZUH ALL-IN-ONE
+# WAZUH ALL-IN-ONE (avec libération de ports avant chaque tentative)
 #=========================================================================
 install_wazuh() {
     log_step "3/5" "Installation Wazuh $WAZUH_VERSION (10-20 min)"
@@ -351,6 +413,14 @@ install_wazuh() {
 
     while [ "$attempt" -le "$RETRY_COUNT" ]; do
         log_info "→ Tentative $attempt/$RETRY_COUNT..."
+
+        # CRITIQUE : Libérer les ports juste avant chaque tentative Wazuh
+        log_info "→ Libération préventive des ports Wazuh..."
+        for port in "${WAZUH_PORTS[@]}"; do
+            kill_port "$port"
+        done
+        sleep 2
+
         log_cmd "bash wazuh-install.sh -a -i"
         sep
         bash wazuh-install.sh -a -i 2>&1 | tee -a "$LOG_FILE"
@@ -364,10 +434,14 @@ install_wazuh() {
 
         log_warning "Tentative $attempt échouée"
         if [ "$attempt" -lt "$RETRY_COUNT" ]; then
-            log_info "→ Cleanup partiel avant retry..."
+            log_info "→ Cleanup port-aware avant retry..."
             systemctl stop wazuh-manager wazuh-indexer wazuh-dashboard 2>/dev/null
             apt remove --purge -y wazuh-manager wazuh-indexer wazuh-dashboard 2>/dev/null
             rm -rf /var/ossec /etc/wazuh-indexer /var/lib/wazuh-indexer wazuh-install-files.tar
+            # Libération des ports après cleanup
+            for port in "${WAZUH_PORTS[@]}"; do
+                kill_port "$port"
+            done
             sleep 5
         fi
         attempt=$((attempt + 1))
@@ -471,12 +545,6 @@ PORTS
 1515  - Wazuh Enrollment
 9200  - Wazuh Indexer
 55000 - Wazuh API
-
-══════════════════════════════════════════════════════════════════
-COMMANDES UTILES
-══════════════════════════════════════════════════════════════════
-sudo systemctl status snort wazuh-manager wazuh-indexer wazuh-dashboard
-sudo tail -f /var/ossec/logs/alerts/alerts.json
 EOF
 
     chmod 600 "$CREDENTIALS_FILE"
@@ -526,9 +594,6 @@ main() {
     parse_args "$@"
     show_banner
 
-    # ─────────────────────────────────────────────────────────────────
-    # PHASE 1 : VÉRIFICATION DES PRÉREQUIS
-    # ─────────────────────────────────────────────────────────────────
     echo -e "${CYAN}════════════════════════════════════════════════════════════════════${NC}"
     echo -e "${CYAN}[VÉRIFICATION DES PRÉREQUIS]${NC}"
     echo -e "${CYAN}════════════════════════════════════════════════════════════════════${NC}"
@@ -540,9 +605,6 @@ main() {
     check_internet
     check_existing_installation
 
-    # ─────────────────────────────────────────────────────────────────
-    # PHASE 2 : PRÉPARATION SYSTÈME
-    # ─────────────────────────────────────────────────────────────────
     echo ""
     echo -e "${CYAN}════════════════════════════════════════════════════════════════════${NC}"
     echo -e "${CYAN}[PRÉPARATION SYSTÈME]${NC}"
@@ -550,9 +612,6 @@ main() {
     update_system
     install_dependencies
 
-    # ─────────────────────────────────────────────────────────────────
-    # PHASE 3 : INSTALLATION
-    # ─────────────────────────────────────────────────────────────────
     echo ""
     echo -e "${CYAN}════════════════════════════════════════════════════════════════════${NC}"
     echo -e "${CYAN}[INSTALLATION]${NC}"
