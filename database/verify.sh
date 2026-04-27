@@ -105,8 +105,15 @@ check "Index" "$INDEXES" "50" "ge"
 # ============================================================================
 section "Configuration SQLite"
 
-FK=$(sqlite3 "$DB_PATH" "PRAGMA foreign_keys;")
-check "Foreign keys" "$FK" "1"
+# Note : PRAGMA foreign_keys est par-session SQLite — on teste plutôt l'intégrité réelle
+FK_VIOLATIONS=$(sqlite3 "$DB_PATH" "PRAGMA foreign_key_check;" 2>&1)
+if [ -z "$FK_VIOLATIONS" ]; then
+    echo -e "  ${C_GREEN}✓${C_RESET} Intégrité des foreign keys : OK"
+    PASS=$((PASS+1))
+else
+    echo -e "  ${C_RED}✗${C_RESET} Violations FK détectées : $FK_VIOLATIONS"
+    FAIL=$((FAIL+1))
+fi
 
 JOURNAL=$(sqlite3 "$DB_PATH" "PRAGMA journal_mode;")
 check "Journal mode" "$JOURNAL" "wal"
