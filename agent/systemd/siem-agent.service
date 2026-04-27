@@ -1,0 +1,35 @@
+[Unit]
+Description=SIEM Africa - Intelligent Agent (Module 3)
+Documentation=https://github.com/africa-siem/africa-siem
+After=network.target wazuh-manager.service
+Wants=network.target
+
+[Service]
+Type=simple
+User=siem-agent
+Group=siem-africa
+WorkingDirectory=/opt/siem-africa-agent
+ExecStart=/usr/bin/python3 /opt/siem-africa-agent/agent.py
+Restart=on-failure
+RestartSec=10s
+StartLimitInterval=300
+StartLimitBurst=5
+
+# Capabilities pour iptables (Active Response) et ports < 1024 si besoin
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
+
+# Logs
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=siem-agent
+
+# Sécurité (sans hardening agressif qui casse CHDIR)
+NoNewPrivileges=false
+PrivateTmp=false
+
+# Variables d'environnement
+Environment="PYTHONUNBUFFERED=1"
+
+[Install]
+WantedBy=multi-user.target
