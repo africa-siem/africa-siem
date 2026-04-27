@@ -182,13 +182,26 @@ case "$ID" in
         ;;
 esac
 
-# Module 1 installé ?
+# Détection Wazuh (Module 1 ou installation tierce)
+WAZUH_DETECTED=0
+SNORT_DETECTED=0
+
 if [ -d "/var/ossec" ] && systemctl is-active --quiet wazuh-manager 2>/dev/null; then
-    log OK "Module 1 détecté (Wazuh actif)"
+    log OK "Wazuh détecté et actif"
+    WAZUH_DETECTED=1
 elif [ -d "/var/ossec" ]; then
-    log WARN "Module 1 partiellement détecté (Wazuh installé mais pas actif)"
+    log WARN "Wazuh installé mais service inactif"
+    WAZUH_DETECTED=1
 else
-    log WARN "Module 1 non détecté. Le Module 2 fonctionnera mais sans données réelles."
+    log INFO "Wazuh non détecté (le Module 2 s'installe quand même)"
+fi
+
+# Détection Snort (binaire ou config)
+if command -v snort >/dev/null 2>&1 || [ -d "/etc/snort" ]; then
+    log OK "Snort détecté"
+    SNORT_DETECTED=1
+else
+    log INFO "Snort non détecté (le Module 2 s'installe quand même)"
 fi
 
 # SQLite3
@@ -267,6 +280,19 @@ if ! id "$SYSTEM_USER" >/dev/null 2>&1; then
     run_cmd "useradd --system --gid $SYSTEM_GROUP --shell /usr/sbin/nologin --home-dir $DB_DIR --no-create-home $SYSTEM_USER"
 fi
 log OK "Utilisateur $SYSTEM_USER disponible"
+
+# Ajouter wazuh/snort au groupe siem-africa s'ils existent
+# Cela leur permet d'accéder à siem.db (permissions 660 siem-db:siem-africa)
+for ext_user in wazuh ossec snort; do
+    if id "$ext_user" >/dev/null 2>&1; then
+        if ! id -nG "$ext_user" | grep -qw "$SYSTEM_GROUP"; then
+            log INFO "Ajout de l'utilisateur '$ext_user' au groupe $SYSTEM_GROUP"
+            run_cmd "usermod -aG $SYSTEM_GROUP $ext_user"
+        else
+            log OK "Utilisateur '$ext_user' déjà dans le groupe $SYSTEM_GROUP"
+        fi
+    fi
+done
 
 # Créer le dossier de la BDD
 if [ ! -d "$DB_DIR" ]; then
