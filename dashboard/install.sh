@@ -194,22 +194,44 @@ NEED_INSTALL=""
 if ! command -v pip3 >/dev/null 2>&1; then
     NEED_INSTALL="$NEED_INSTALL python3-pip"
 fi
-if ! python3 -c "import venv" 2>/dev/null; then
+
+# Vraie détection venv : tenter de créer un venv test
+# (le simple `import venv` ne suffit pas car ensurepip peut manquer)
+TEST_VENV=$(mktemp -d)
+if ! python3 -m venv "$TEST_VENV" 2>/dev/null; then
+    # Détecter la version Python pour installer le BON paquet venv
+    PYTHON_MAJOR_MINOR=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null)
+    if [ -n "$PYTHON_MAJOR_MINOR" ]; then
+        NEED_INSTALL="$NEED_INSTALL python${PYTHON_MAJOR_MINOR}-venv"
+    fi
+    # Aussi le générique au cas où
     NEED_INSTALL="$NEED_INSTALL python3-venv"
 fi
+rm -rf "$TEST_VENV"
+
 # python3-dev parfois nécessaire pour bcrypt
 NEED_INSTALL="$NEED_INSTALL python3-dev build-essential"
 
 if [ -n "$NEED_INSTALL" ]; then
     log_info "Installation des paquets système :$NEED_INSTALL"
     apt-get update -qq >/dev/null 2>&1
-    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq $NEED_INSTALL >/dev/null 2>&1 || \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq $NEED_INSTALL 2>>"$LOG_DIR/dashboard-install.log" || \
         log_warn "Certains paquets n'ont pas pu être installés"
 fi
 
 # Vérification post-install
 command -v pip3 >/dev/null 2>&1 || abort "pip3 introuvable après installation. Lancez : sudo apt install python3-pip python3-venv"
 log_ok "pip3 disponible : $(pip3 --version | head -c 50)..."
+
+# Re-tester venv après install
+TEST_VENV=$(mktemp -d)
+if ! python3 -m venv "$TEST_VENV" 2>/dev/null; then
+    rm -rf "$TEST_VENV"
+    PYTHON_MAJOR_MINOR=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+    abort "venv impossible à créer. Lancez manuellement : sudo apt install python${PYTHON_MAJOR_MINOR}-venv && relancez ce script"
+fi
+rm -rf "$TEST_VENV"
+log_ok "venv fonctionnel"
 
 # 2. Créer le virtualenv dédié au dashboard
 VENV_DIR="${INSTALL_DIR}/venv"
