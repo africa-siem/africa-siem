@@ -134,7 +134,8 @@ cd "$WORK_DIR"
 download() {
     local src="$1"
     local dest="$2"
-    if curl -sL --fail "$src" -o "$dest" && [ -s "$dest" ]; then
+    # On accepte les fichiers vides (ex: __init__.py) tant que curl réussit (HTTP 2xx)
+    if curl -sL --fail "$src" -o "$dest"; then
         return 0
     fi
     return 1
