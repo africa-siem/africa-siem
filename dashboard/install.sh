@@ -242,13 +242,14 @@ python3 -m venv "$VENV_DIR" 2>>"$LOG_DIR/dashboard-install.log" || \
 log_ok "Virtualenv créé"
 
 # 3. Installer les dépendances DANS le venv
-log_info "Installation Django + gunicorn + whitenoise + bcrypt (dans venv)"
+log_info "Installation Django + gunicorn + whitenoise + bcrypt + argon2 (dans venv)"
 "$VENV_DIR/bin/pip" install --quiet --upgrade pip 2>>"$LOG_DIR/dashboard-install.log" || true
 "$VENV_DIR/bin/pip" install --quiet \
     'django>=4.2,<5.0' \
     'gunicorn>=21.0' \
     'whitenoise>=6.0' \
-    'bcrypt>=4.0' 2>>"$LOG_DIR/dashboard-install.log" || \
+    'bcrypt>=4.0' \
+    'argon2-cffi>=23.0' 2>>"$LOG_DIR/dashboard-install.log" || \
     abort "Installation pip échouée. Voir : $LOG_DIR/dashboard-install.log"
 
 # Vérifier Django
@@ -256,7 +257,7 @@ DJANGO_VERSION=$("$VENV_DIR/bin/python" -c "import django; print(django.__versio
 [ -n "$DJANGO_VERSION" ] || abort "Django non installé"
 log_ok "Django installé : $DJANGO_VERSION"
 log_ok "Gunicorn installé : $("$VENV_DIR/bin/gunicorn" --version 2>&1 | head -1)"
-log_ok "bcrypt installé"
+log_ok "bcrypt + argon2 installés"
 
 # ============================================================================
 # PHASE 4 : PREPARATION SYSTEME
