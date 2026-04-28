@@ -148,19 +148,27 @@ for f in "${ROOT_FILES[@]}"; do
     printf "  %s✓%s %s\n" "$C_GREEN" "$C_RESET" "$f"
 done
 
-# Package siem_africa
-SIEM_FILES=(__init__.py settings.py urls.py wsgi.py)
+# Package siem_africa (sans __init__.py qui est créé en local)
+SIEM_FILES=(settings.py urls.py wsgi.py)
 for f in "${SIEM_FILES[@]}"; do
     download "${GITHUB_BASE}/siem_africa/${f}" "${WORK_DIR}/siem_africa/${f}" || abort "Téléchargement siem_africa/$f échoué"
     printf "  %s✓%s siem_africa/%s\n" "$C_GREEN" "$C_RESET" "$f"
 done
 
-# Package core
-CORE_FILES=(__init__.py db.py auth.py middleware.py context.py views.py urls.py ai.py)
+# Créer __init__.py vide localement (GitHub n'accepte pas les fichiers de 0 octet via web UI)
+touch "${WORK_DIR}/siem_africa/__init__.py"
+printf "  %s✓%s siem_africa/__init__.py (créé en local)\n" "$C_GREEN" "$C_RESET"
+
+# Package core (sans __init__.py)
+CORE_FILES=(db.py auth.py middleware.py context.py views.py urls.py ai.py)
 for f in "${CORE_FILES[@]}"; do
     download "${GITHUB_BASE}/core/${f}" "${WORK_DIR}/core/${f}" || abort "Téléchargement core/$f échoué"
     printf "  %s✓%s core/%s\n" "$C_GREEN" "$C_RESET" "$f"
 done
+
+# Créer core/__init__.py vide localement
+touch "${WORK_DIR}/core/__init__.py"
+printf "  %s✓%s core/__init__.py (créé en local)\n" "$C_GREEN" "$C_RESET"
 
 # Templates
 TEMPLATE_FILES=(base.html login.html change_password.html dashboard.html alerts.html alert_detail.html filters.html filter_form.html blocked_ips.html mitre.html mitre_detail.html honeypot.html users.html user_form.html settings.html ai.html)
