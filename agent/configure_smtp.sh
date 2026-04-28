@@ -1,17 +1,14 @@
 #!/usr/bin/env bash
 # ============================================================================
-# SIEM Africa — Module 3 — Reconfiguration SMTP
+# SIEM Africa - Module 3 - Configuration SMTP guidee
 # ============================================================================
-# Permet de reconfigurer SMTP après l'installation initiale.
-# Le service est redémarré automatiquement à la fin.
-#
-# Usage : sudo ./configure_smtp.sh
+# Reconfigure SMTP avec des explications detaillees a chaque etape.
+# Le service est redemarre automatiquement a la fin.
 # ============================================================================
 
 LC_ALL=C
 LANG=C
 
-# Reattach stdin si curl|bash
 if [ ! -t 0 ] && [ -r /dev/tty ]; then
     exec </dev/tty
 fi
@@ -22,66 +19,14 @@ ENV_FILE="${CONFIG_DIR}/agent.env"
 SERVICE_NAME="siem-agent"
 LANG_CHOICE="fr"
 
-C_RED='\033[0;31m'
-C_GREEN='\033[0;32m'
-C_YELLOW='\033[0;33m'
-C_BLUE='\033[0;34m'
-C_CYAN='\033[0;36m'
-C_RESET='\033[0m'
-
-# ============================================================================
-# I18N
-# ============================================================================
-
-t() {
-    local key="$1"
-    case "$LANG_CHOICE" in
-        fr)
-            case "$key" in
-                must_root)         echo "Ce script doit être lancé en root. Utilisez : sudo bash $0" ;;
-                missing_env)       echo "Module 3 non installé (${ENV_FILE} introuvable)" ;;
-                banner)            echo "Reconfiguration SMTP — SIEM Africa" ;;
-                ask_host)          echo -n "Serveur SMTP (ex: smtp.gmail.com) : " ;;
-                ask_port)          echo -n "Port SMTP" ;;
-                ask_tls)           echo -n "Utiliser STARTTLS ?" ;;
-                ask_user)          echo -n "Utilisateur SMTP (vide pour anonyme) : " ;;
-                ask_pass)          echo -n "Mot de passe SMTP (App Password pour Gmail) : " ;;
-                ask_from)          echo -n "Adresse expéditeur From" ;;
-                ask_alert_email)   echo -n "Email destinataire des alertes" ;;
-                saving)            echo "Enregistrement de la configuration" ;;
-                ok_saved)          echo "Configuration SMTP enregistrée" ;;
-                testing)           echo "Envoi d'un email de test" ;;
-                test_ok)           echo "Email de test envoyé avec succès" ;;
-                test_fail)         echo "ATTENTION : test SMTP échoué — config quand même enregistrée" ;;
-                restarting)        echo "Redémarrage du service ${SERVICE_NAME}" ;;
-                restart_ok)        echo "Service redémarré" ;;
-                no_restart)        echo "Service non actif (sera lancé manuellement)" ;;
-            esac
-            ;;
-        *)
-            case "$key" in
-                must_root)         echo "This script must run as root. Use: sudo bash $0" ;;
-                missing_env)       echo "Module 3 not installed (${ENV_FILE} missing)" ;;
-                banner)            echo "SMTP Reconfiguration — SIEM Africa" ;;
-                ask_host)          echo -n "SMTP host (e.g. smtp.gmail.com): " ;;
-                ask_port)          echo -n "SMTP port" ;;
-                ask_tls)           echo -n "Use STARTTLS?" ;;
-                ask_user)          echo -n "SMTP user (blank for anonymous): " ;;
-                ask_pass)          echo -n "SMTP password (App Password for Gmail): " ;;
-                ask_from)          echo -n "From address" ;;
-                ask_alert_email)   echo -n "Alert recipient email" ;;
-                saving)            echo "Saving configuration" ;;
-                ok_saved)          echo "SMTP configuration saved" ;;
-                testing)           echo "Sending test email" ;;
-                test_ok)           echo "Test email sent successfully" ;;
-                test_fail)         echo "WARNING: SMTP test failed — config still saved" ;;
-                restarting)        echo "Restarting service ${SERVICE_NAME}" ;;
-                restart_ok)        echo "Service restarted" ;;
-                no_restart)        echo "Service not active (will need manual start)" ;;
-            esac
-            ;;
-    esac
-}
+C_RED=$'\033[0;31m'
+C_GREEN=$'\033[0;32m'
+C_YELLOW=$'\033[0;33m'
+C_BLUE=$'\033[0;34m'
+C_CYAN=$'\033[0;36m'
+C_BOLD=$'\033[1m'
+C_DIM=$'\033[2m'
+C_RESET=$'\033[0m'
 
 log() {
     local level="$1"; shift
@@ -92,7 +37,7 @@ log() {
         WARN)  color="$C_YELLOW" ;;
         ERROR) color="$C_RED"    ;;
     esac
-    echo -e "${color}[${level}]${C_RESET} $*"
+    printf "%s[%s]%s %s\n" "$color" "$level" "$C_RESET" "$*"
 }
 
 # ============================================================================
@@ -100,23 +45,28 @@ log() {
 # ============================================================================
 
 if [ "$(id -u)" -ne 0 ]; then
-    echo "$(t must_root)"
+    echo "Ce script doit être lancé en root. Utilisez : sudo bash $0"
     exit 1
 fi
 
 if [ ! -f "$ENV_FILE" ]; then
-    log ERROR "$(t missing_env)"
+    log ERROR "Module 3 non installé ($ENV_FILE introuvable)"
+    log INFO "Lancez d'abord : sudo ./install_agent.sh"
     exit 1
 fi
 
 # ============================================================================
-# CHOIX LANGUE
+# BANNIERE + LANGUE
 # ============================================================================
 
+clear || true
 echo ""
-echo -e "${C_CYAN}════════════════════════════════════════════════════════════════════════${C_RESET}"
-echo -e "${C_CYAN}║${C_RESET}              SIEM AFRICA — SMTP RECONFIGURATION                       ${C_CYAN}║${C_RESET}"
-echo -e "${C_CYAN}════════════════════════════════════════════════════════════════════════${C_RESET}"
+echo "${C_CYAN}╔════════════════════════════════════════════════════════════════════╗${C_RESET}"
+echo "${C_CYAN}║${C_RESET}        ${C_BOLD}SIEM AFRICA — Configuration SMTP guidée${C_RESET}                  ${C_CYAN}║${C_RESET}"
+echo "${C_CYAN}╚════════════════════════════════════════════════════════════════════╝${C_RESET}"
+echo ""
+echo "Ce script va vous guider étape par étape pour configurer l'envoi"
+echo "d'emails d'alerte. ${C_BOLD}Chaque étape inclut une aide contextuelle.${C_RESET}"
 echo ""
 echo "Language / Langue :"
 echo "  1) Français"
@@ -128,12 +78,8 @@ case "${lang_input:-1}" in
     *) LANG_CHOICE="fr" ;;
 esac
 
-echo ""
-echo -e "${C_CYAN}$(t banner)${C_RESET}"
-echo ""
-
 # ============================================================================
-# LECTURE CONFIG ACTUELLE (defaults)
+# LECTURE CONFIG ACTUELLE
 # ============================================================================
 
 read_env_var() {
@@ -148,77 +94,350 @@ EX_USER=$(read_env_var "SMTP_USER")
 EX_FROM=$(read_env_var "SMTP_FROM")
 EX_EMAIL=$(read_env_var "ALERT_EMAIL")
 
-# Affichage des défauts
-echo "Configuration actuelle :"
+# ============================================================================
+# AFFICHAGE CONFIG ACTUELLE
+# ============================================================================
+
+clear || true
+echo ""
+echo "${C_CYAN}════════════════════════════════════════════════════════════════════════${C_RESET}"
+if [ "$LANG_CHOICE" = "fr" ]; then
+    echo "${C_BOLD}Configuration SMTP actuelle :${C_RESET}"
+else
+    echo "${C_BOLD}Current SMTP configuration:${C_RESET}"
+fi
+echo "${C_CYAN}════════════════════════════════════════════════════════════════════════${C_RESET}"
+echo ""
 echo "  SMTP_HOST    : ${EX_HOST:-(vide)}"
 echo "  SMTP_PORT    : ${EX_PORT:-(vide)}"
 echo "  SMTP_USER    : ${EX_USER:-(vide)}"
 echo "  SMTP_FROM    : ${EX_FROM:-(vide)}"
 echo "  ALERT_EMAIL  : ${EX_EMAIL:-(vide)}"
 echo ""
-echo "(Appuyez Entrée pour conserver une valeur)"
+if [ "$LANG_CHOICE" = "fr" ]; then
+    echo "${C_DIM}Astuce : appuyez sur Entrée à chaque question pour conserver la valeur actuelle.${C_RESET}"
+else
+    echo "${C_DIM}Tip: press Enter at each question to keep current value.${C_RESET}"
+fi
 echo ""
+echo -n "Continuer ? [O/n] : "
+read -r confirm
+case "${confirm:-O}" in
+    [nN]*) log INFO "Configuration annulée"; exit 0 ;;
+esac
 
 # ============================================================================
-# QUESTIONS
+# ETAPE 1 : SERVEUR SMTP
 # ============================================================================
 
-t ask_host
+echo ""
+echo "${C_CYAN}┌──────────────────────────────────────────────────────────────────────┐${C_RESET}"
+echo "${C_CYAN}│${C_RESET} ${C_BOLD}💡 ÉTAPE 1/7 — Serveur SMTP${C_RESET}                                          ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}├──────────────────────────────────────────────────────────────────────┤${C_RESET}"
+echo "${C_CYAN}│${C_RESET}                                                                      ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET} Le serveur SMTP est l'adresse du \"bureau de poste\" qui va envoyer    ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET} les emails d'alerte. La valeur dépend de votre fournisseur d'email.  ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET}                                                                      ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET} ${C_GREEN}Valeurs courantes :${C_RESET}                                                  ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET}   • Gmail              → ${C_BOLD}smtp.gmail.com${C_RESET}                              ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET}   • Outlook / Hotmail  → ${C_BOLD}smtp-mail.outlook.com${C_RESET}                       ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET}   • Yahoo              → ${C_BOLD}smtp.mail.yahoo.com${C_RESET}                         ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET}   • OVH                → ${C_BOLD}ssl0.ovh.net${C_RESET}                                ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET}   • iCloud             → ${C_BOLD}smtp.mail.me.com${C_RESET}                            ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET}   • Zoho               → ${C_BOLD}smtp.zoho.com${C_RESET}                               ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}└──────────────────────────────────────────────────────────────────────┘${C_RESET}"
+
+echo -n "  → Serveur SMTP [${EX_HOST:-smtp.gmail.com}] : "
 read -r SMTP_HOST
-SMTP_HOST="${SMTP_HOST:-$EX_HOST}"
-while [ -z "$SMTP_HOST" ]; do
-    t ask_host
-    read -r SMTP_HOST
-done
+SMTP_HOST="${SMTP_HOST:-${EX_HOST:-smtp.gmail.com}}"
 
-t ask_port; echo -n " [${EX_PORT:-587}] : "
-read -r SMTP_PORT
-SMTP_PORT="${SMTP_PORT:-${EX_PORT:-587}}"
+# ============================================================================
+# ETAPE 2 : PORT
+# ============================================================================
 
-t ask_tls; echo -n " [${EX_TLS:-1}=oui/0=non] [${EX_TLS:-1}] : "
+echo ""
+echo "${C_CYAN}┌──────────────────────────────────────────────────────────────────────┐${C_RESET}"
+echo "${C_CYAN}│${C_RESET} ${C_BOLD}💡 ÉTAPE 2/7 — Port SMTP${C_RESET}                                             ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}├──────────────────────────────────────────────────────────────────────┤${C_RESET}"
+echo "${C_CYAN}│${C_RESET}                                                                      ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET} Le port est la \"porte d'entrée\" du serveur SMTP.                     ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET}                                                                      ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET} ${C_GREEN}Valeurs courantes :${C_RESET}                                                  ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET}   • ${C_BOLD}587${C_RESET}  → ${C_GREEN}Recommandé${C_RESET} (avec STARTTLS — moderne, sécurisé)         ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET}   • ${C_BOLD}465${C_RESET}  → SSL/TLS direct (ancienne méthode)                       ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET}   • ${C_BOLD}25${C_RESET}   → Non chiffré (à éviter)                                  ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET}                                                                      ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET} ${C_YELLOW}Pour Gmail / Outlook / Yahoo : utilisez ${C_BOLD}587${C_RESET}                          ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}└──────────────────────────────────────────────────────────────────────┘${C_RESET}"
+
+echo -n "  → Port SMTP [${EX_PORT:-587}] : "
+read -r p
+SMTP_PORT="${p:-${EX_PORT:-587}}"
+
+# ============================================================================
+# ETAPE 3 : STARTTLS
+# ============================================================================
+
+echo ""
+echo "${C_CYAN}┌──────────────────────────────────────────────────────────────────────┐${C_RESET}"
+echo "${C_CYAN}│${C_RESET} ${C_BOLD}💡 ÉTAPE 3/7 — Chiffrement STARTTLS${C_RESET}                                  ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}├──────────────────────────────────────────────────────────────────────┤${C_RESET}"
+echo "${C_CYAN}│${C_RESET}                                                                      ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET} STARTTLS chiffre la connexion entre l'agent et le serveur SMTP.      ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET} Sans chiffrement, votre mot de passe SMTP passerait ${C_RED}en clair${C_RESET}         ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET} sur le réseau, ce qui est dangereux.                                 ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET}                                                                      ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET} ${C_GREEN}✓ Toujours répondre OUI (1)${C_RESET}                                          ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET} ${C_DIM}Sauf si vous utilisez le port 465 (déjà chiffré directement).${C_RESET}        ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}└──────────────────────────────────────────────────────────────────────┘${C_RESET}"
+
+echo -n "  → Utiliser STARTTLS ? [1=oui/0=non] [${EX_TLS:-1}] : "
 read -r tls
 case "${tls:-${EX_TLS:-1}}" in
-    0|n|N|no|non) SMTP_USE_TLS="0" ;;
+    0|n|N) SMTP_USE_TLS="0" ;;
     *) SMTP_USE_TLS="1" ;;
 esac
 
-t ask_user
+# ============================================================================
+# ETAPE 4 : UTILISATEUR
+# ============================================================================
+
+echo ""
+echo "${C_CYAN}┌──────────────────────────────────────────────────────────────────────┐${C_RESET}"
+echo "${C_CYAN}│${C_RESET} ${C_BOLD}💡 ÉTAPE 4/7 — Utilisateur SMTP${C_RESET}                                      ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}├──────────────────────────────────────────────────────────────────────┤${C_RESET}"
+echo "${C_CYAN}│${C_RESET}                                                                      ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET} ${C_RED}⚠ Erreur fréquente : ne mettez PAS juste votre prénom !${C_RESET}              ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET}                                                                      ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET} Mettez ${C_BOLD}votre adresse email complète${C_RESET}.                                 ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET}                                                                      ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET} ${C_GREEN}Exemples corrects :${C_RESET}                                                  ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET}   ${C_GREEN}✓${C_RESET} siemafrica45@gmail.com                                          ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET}   ${C_GREEN}✓${C_RESET} admin@masociete.com                                              ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET}                                                                      ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET} ${C_RED}Exemples INCORRECTS :${C_RESET}                                                ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET}   ${C_RED}✗${C_RESET} Lyren           (juste un prénom)                                ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET}   ${C_RED}✗${C_RESET} siemafrica45    (sans @gmail.com)                                ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET}   ${C_RED}✗${C_RESET} admin           (juste un nom d'utilisateur)                     ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}└──────────────────────────────────────────────────────────────────────┘${C_RESET}"
+
+echo -n "  → Utilisateur SMTP (${C_BOLD}email complet${C_RESET}) [${EX_USER:-(vide)}] : "
 read -r SMTP_USER
 [ -z "$SMTP_USER" ] && SMTP_USER="$EX_USER"
 
-SMTP_PASSWORD=""
-if [ -n "$SMTP_USER" ]; then
-    t ask_pass
-    stty -echo 2>/dev/null
-    read -r SMTP_PASSWORD
-    stty echo 2>/dev/null
+# Validation : warn si pas d'email
+if [ -n "$SMTP_USER" ] && ! echo "$SMTP_USER" | grep -q "@"; then
     echo ""
+    log WARN "L'utilisateur '$SMTP_USER' ne contient pas '@'"
+    log WARN "Gmail va certainement refuser. Il faut une adresse email complète."
+    echo -n "  Continuer quand même ? [o/N] : "
+    read -r confirm
+    case "${confirm:-N}" in
+        [oOyY]*) ;;
+        *)
+            echo -n "  → Utilisateur SMTP corrigé : "
+            read -r SMTP_USER
+            ;;
+    esac
 fi
 
-DEFAULT_FROM="${EX_FROM:-agent@$(hostname -f 2>/dev/null || hostname)}"
-t ask_from; echo -n " [${DEFAULT_FROM}] : "
+# ============================================================================
+# ETAPE 5 : MOT DE PASSE
+# ============================================================================
+
+SMTP_PASSWORD=""
+if [ -n "$SMTP_USER" ]; then
+
+    # Détection Gmail
+    IS_GMAIL=0
+    if echo "$SMTP_HOST" | grep -qi "gmail" || echo "$SMTP_USER" | grep -qi "@gmail.com"; then
+        IS_GMAIL=1
+    fi
+
+    echo ""
+    echo "${C_CYAN}┌──────────────────────────────────────────────────────────────────────┐${C_RESET}"
+    echo "${C_CYAN}│${C_RESET} ${C_BOLD}💡 ÉTAPE 5/7 — Mot de passe SMTP${C_RESET}                                     ${C_CYAN}│${C_RESET}"
+    echo "${C_CYAN}├──────────────────────────────────────────────────────────────────────┤${C_RESET}"
+
+    if [ "$IS_GMAIL" -eq 1 ]; then
+        echo "${C_CYAN}│${C_RESET}                                                                      ${C_CYAN}│${C_RESET}"
+        echo "${C_CYAN}│${C_RESET} ${C_RED}⚠ IMPORTANT : Gmail bloque le mot de passe normal depuis 2022.${C_RESET}        ${C_CYAN}│${C_RESET}"
+        echo "${C_CYAN}│${C_RESET}                                                                      ${C_CYAN}│${C_RESET}"
+        echo "${C_CYAN}│${C_RESET} Vous devez créer un ${C_BOLD}\"App Password\"${C_RESET} (mot de passe d'application)    ${C_CYAN}│${C_RESET}"
+        echo "${C_CYAN}│${C_RESET} — un code spécial de ${C_BOLD}16 caractères${C_RESET} généré par Google.               ${C_CYAN}│${C_RESET}"
+        echo "${C_CYAN}│${C_RESET}                                                                      ${C_CYAN}│${C_RESET}"
+        echo "${C_CYAN}│${C_RESET} ${C_GREEN}═══ COMMENT CRÉER UN APP PASSWORD ═══${C_RESET}                                ${C_CYAN}│${C_RESET}"
+        echo "${C_CYAN}│${C_RESET}                                                                      ${C_CYAN}│${C_RESET}"
+        echo "${C_CYAN}│${C_RESET} ${C_BOLD}1.${C_RESET} Activer la validation 2 étapes (si pas déjà fait) :              ${C_CYAN}│${C_RESET}"
+        echo "${C_CYAN}│${C_RESET}    ${C_CYAN}https://myaccount.google.com/signinoptions/two-step-verification${C_RESET}    ${C_CYAN}│${C_RESET}"
+        echo "${C_CYAN}│${C_RESET}                                                                      ${C_CYAN}│${C_RESET}"
+        echo "${C_CYAN}│${C_RESET} ${C_BOLD}2.${C_RESET} Créer l'App Password :                                            ${C_CYAN}│${C_RESET}"
+        echo "${C_CYAN}│${C_RESET}    ${C_CYAN}https://myaccount.google.com/apppasswords${C_RESET}                          ${C_CYAN}│${C_RESET}"
+        echo "${C_CYAN}│${C_RESET}                                                                      ${C_CYAN}│${C_RESET}"
+        echo "${C_CYAN}│${C_RESET} ${C_BOLD}3.${C_RESET} Tapez \"SIEM Africa\" comme nom d'application → Créer              ${C_CYAN}│${C_RESET}"
+        echo "${C_CYAN}│${C_RESET}                                                                      ${C_CYAN}│${C_RESET}"
+        echo "${C_CYAN}│${C_RESET} ${C_BOLD}4.${C_RESET} Google affiche un code style ${C_GREEN}\"abcd efgh ijkl mnop\"${C_RESET}              ${C_CYAN}│${C_RESET}"
+        echo "${C_CYAN}│${C_RESET}    Copiez-le ${C_RED}IMMÉDIATEMENT${C_RESET} (il ne sera plus jamais affiché).         ${C_CYAN}│${C_RESET}"
+        echo "${C_CYAN}│${C_RESET}                                                                      ${C_CYAN}│${C_RESET}"
+        echo "${C_CYAN}│${C_RESET} ${C_BOLD}5.${C_RESET} Collez-le ci-dessous (avec ou sans espaces, peu importe).        ${C_CYAN}│${C_RESET}"
+        echo "${C_CYAN}│${C_RESET}                                                                      ${C_CYAN}│${C_RESET}"
+        echo "${C_CYAN}│${C_RESET} ${C_DIM}Le mot de passe ne s'affichera pas pendant la saisie (sécurité).${C_RESET}     ${C_CYAN}│${C_RESET}"
+    else
+        echo "${C_CYAN}│${C_RESET}                                                                      ${C_CYAN}│${C_RESET}"
+        echo "${C_CYAN}│${C_RESET} Mot de passe pour l'utilisateur ${C_BOLD}${SMTP_USER}${C_RESET}"
+        echo "${C_CYAN}│${C_RESET}                                                                      ${C_CYAN}│${C_RESET}"
+        echo "${C_CYAN}│${C_RESET} ${C_DIM}Le mot de passe ne s'affichera pas (sécurité).${C_RESET}                       ${C_CYAN}│${C_RESET}"
+        echo "${C_CYAN}│${C_RESET}                                                                      ${C_CYAN}│${C_RESET}"
+        echo "${C_CYAN}│${C_RESET} ${C_YELLOW}Selon votre fournisseur :${C_RESET}                                            ${C_CYAN}│${C_RESET}"
+        echo "${C_CYAN}│${C_RESET}   • Outlook / Office 365 : peut nécessiter un App Password aussi    ${C_CYAN}│${C_RESET}"
+        echo "${C_CYAN}│${C_RESET}   • Yahoo : nécessite un App Password (Account Security)            ${C_CYAN}│${C_RESET}"
+        echo "${C_CYAN}│${C_RESET}   • OVH / autres : votre mot de passe email normal                  ${C_CYAN}│${C_RESET}"
+    fi
+    echo "${C_CYAN}└──────────────────────────────────────────────────────────────────────┘${C_RESET}"
+
+    if [ "$IS_GMAIL" -eq 1 ]; then
+        echo ""
+        echo "  ${C_YELLOW}Avez-vous déjà créé l'App Password ?${C_RESET}"
+        echo "    1) Oui, je l'ai prêt"
+        echo "    2) Non — affiche-moi à nouveau les liens"
+        echo "    3) Garder le mot de passe actuel"
+        echo -n "  → Choix [1] : "
+        read -r pwd_choice
+
+        case "${pwd_choice:-1}" in
+            2)
+                echo ""
+                echo "  ${C_GREEN}═══ Liens à ouvrir dans votre navigateur ═══${C_RESET}"
+                echo ""
+                echo "  ${C_BOLD}1.${C_RESET} Activer 2FA (si pas fait) :"
+                echo "     ${C_CYAN}https://myaccount.google.com/signinoptions/two-step-verification${C_RESET}"
+                echo ""
+                echo "  ${C_BOLD}2.${C_RESET} Créer App Password \"SIEM Africa\" :"
+                echo "     ${C_CYAN}https://myaccount.google.com/apppasswords${C_RESET}"
+                echo ""
+                echo -n "  Une fois le code 16 caractères copié, appuyez sur Entrée..."
+                read -r _
+                ;;
+            3)
+                SMTP_PASSWORD=""
+                log INFO "Mot de passe inchangé"
+                ;;
+        esac
+    fi
+
+    if [ "${pwd_choice:-1}" != "3" ]; then
+        echo -n "  → Mot de passe SMTP (${C_DIM}invisible pendant la saisie${C_RESET}) : "
+        stty -echo 2>/dev/null
+        read -r SMTP_PASSWORD
+        stty echo 2>/dev/null
+        echo ""
+
+        # Validation longueur Gmail
+        if [ "$IS_GMAIL" -eq 1 ] && [ -n "$SMTP_PASSWORD" ]; then
+            PWD_LEN=$(printf '%s' "$SMTP_PASSWORD" | tr -d ' ' | wc -c)
+            if [ "$PWD_LEN" -ne 16 ]; then
+                log WARN "App Password fait $PWD_LEN caractères (attendu : 16 sans les espaces)"
+                log WARN "Vérifiez que vous avez collé tout le code Google"
+            fi
+        fi
+    fi
+fi
+
+# ============================================================================
+# ETAPE 6 : FROM
+# ============================================================================
+
+DEFAULT_FROM="${EX_FROM:-${SMTP_USER:-agent@$(hostname -f 2>/dev/null || hostname)}}"
+
+echo ""
+echo "${C_CYAN}┌──────────────────────────────────────────────────────────────────────┐${C_RESET}"
+echo "${C_CYAN}│${C_RESET} ${C_BOLD}💡 ÉTAPE 6/7 — Adresse expéditeur (From)${C_RESET}                              ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}├──────────────────────────────────────────────────────────────────────┤${C_RESET}"
+echo "${C_CYAN}│${C_RESET}                                                                      ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET} C'est l'adresse qui apparaîtra dans le champ ${C_BOLD}\"De :\"${C_RESET}                  ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET} quand vous recevrez un email d'alerte.                              ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET}                                                                      ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET} ${C_GREEN}Recommandation :${C_RESET}                                                     ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET}   Mettez la même adresse que le SMTP_USER ci-dessus.                ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET}                                                                      ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET} ${C_YELLOW}⚠ Pour Gmail :${C_RESET} si vous mettez une adresse différente,                ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET} Gmail va automatiquement la réécrire en ${SMTP_USER}.                ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET}                                                                      ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET} ${C_DIM}Vous pouvez aussi personnaliser :${C_RESET}                                    ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET}   ${C_DIM}\"SIEM Africa <${SMTP_USER}>\"${C_RESET}"
+echo "${C_CYAN}└──────────────────────────────────────────────────────────────────────┘${C_RESET}"
+
+echo -n "  → Adresse From [${DEFAULT_FROM}] : "
 read -r SMTP_FROM
 SMTP_FROM="${SMTP_FROM:-$DEFAULT_FROM}"
 
-t ask_alert_email; echo -n " [${EX_EMAIL:-(vide)}] : "
+# ============================================================================
+# ETAPE 7 : DESTINATAIRE
+# ============================================================================
+
+DEFAULT_EMAIL="${EX_EMAIL:-${SMTP_USER}}"
+
+echo ""
+echo "${C_CYAN}┌──────────────────────────────────────────────────────────────────────┐${C_RESET}"
+echo "${C_CYAN}│${C_RESET} ${C_BOLD}💡 ÉTAPE 7/7 — Email destinataire des alertes${C_RESET}                         ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}├──────────────────────────────────────────────────────────────────────┤${C_RESET}"
+echo "${C_CYAN}│${C_RESET}                                                                      ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET} Adresse(s) email qui ${C_BOLD}recevront${C_RESET} les alertes de sécurité.                  ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET}                                                                      ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET} ${C_GREEN}Exemples :${C_RESET}                                                            ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET}   • Une seule personne : ${C_BOLD}admin@masociete.com${C_RESET}                          ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET}   • Plusieurs (séparées par virgule) :                              ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET}     ${C_BOLD}admin@masociete.com,securite@masociete.com${C_RESET}                       ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET}                                                                      ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET} ${C_YELLOW}Astuce :${C_RESET} ça peut être la même adresse que SMTP_USER                 ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}│${C_RESET} (vous vous envoyez les alertes à vous-même), c'est très courant.    ${C_CYAN}│${C_RESET}"
+echo "${C_CYAN}└──────────────────────────────────────────────────────────────────────┘${C_RESET}"
+
+echo -n "  → Email destinataire [${DEFAULT_EMAIL}] : "
 read -r ALERT_EMAIL
-ALERT_EMAIL="${ALERT_EMAIL:-$EX_EMAIL}"
+ALERT_EMAIL="${ALERT_EMAIL:-$DEFAULT_EMAIL}"
+
+# ============================================================================
+# RECAP + CONFIRMATION
+# ============================================================================
+
+echo ""
+echo "${C_CYAN}════════════════════════════════════════════════════════════════════════${C_RESET}"
+echo "${C_BOLD}Récapitulatif :${C_RESET}"
+echo "${C_CYAN}════════════════════════════════════════════════════════════════════════${C_RESET}"
+echo ""
+echo "  SMTP_HOST     : $SMTP_HOST"
+echo "  SMTP_PORT     : $SMTP_PORT"
+echo "  SMTP_USE_TLS  : $SMTP_USE_TLS"
+echo "  SMTP_USER     : $SMTP_USER"
+if [ -n "$SMTP_PASSWORD" ]; then
+    echo "  SMTP_PASSWORD : ${C_GREEN}*** (modifié)${C_RESET}"
+else
+    echo "  SMTP_PASSWORD : ${C_DIM}(inchangé)${C_RESET}"
+fi
+echo "  SMTP_FROM     : $SMTP_FROM"
+echo "  ALERT_EMAIL   : $ALERT_EMAIL"
+echo ""
+
+echo -n "Sauvegarder cette configuration et tester l'envoi ? [O/n] : "
+read -r confirm_save
+case "${confirm_save:-O}" in
+    [nN]*)
+        log INFO "Configuration annulée. Aucun fichier modifié."
+        exit 0
+        ;;
+esac
 
 # ============================================================================
 # SAUVEGARDE
 # ============================================================================
 
-log INFO "$(t saving)"
-
-# Backup avant modification
 cp "$ENV_FILE" "${ENV_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
 
-# Mise à jour ligne par ligne (préserve les commentaires)
 update_env_var() {
     local key="$1"
     local value="$2"
     if grep -qE "^${key}=" "$ENV_FILE"; then
-        # Échapper les caractères spéciaux pour sed
         local escaped_value=$(printf '%s\n' "$value" | sed 's/[\/&]/\\&/g')
         sed -i "s|^${key}=.*|${key}=${escaped_value}|" "$ENV_FILE"
     else
@@ -234,18 +453,22 @@ update_env_var "SMTP_USER" "$SMTP_USER"
 update_env_var "SMTP_FROM" "$SMTP_FROM"
 update_env_var "ALERT_EMAIL" "$ALERT_EMAIL"
 
-# Permissions strictes
 chown root:"$SYSTEM_GROUP" "$ENV_FILE"
 chmod 640 "$ENV_FILE"
 
-log OK "$(t ok_saved) → $ENV_FILE"
+log OK "Configuration enregistrée → $ENV_FILE"
 
 # ============================================================================
 # TEST SMTP
 # ============================================================================
 
+# Récupérer le password actuel si pas modifié
+if [ -z "$SMTP_PASSWORD" ]; then
+    SMTP_PASSWORD=$(read_env_var "SMTP_PASSWORD")
+fi
+
 if [ -n "$SMTP_HOST" ] && [ -n "$ALERT_EMAIL" ]; then
-    log INFO "$(t testing)"
+    log INFO "Envoi d'un email de test à $ALERT_EMAIL"
 
     if SMTP_HOST="$SMTP_HOST" SMTP_PORT="$SMTP_PORT" SMTP_USER="$SMTP_USER" \
        SMTP_PASSWORD="$SMTP_PASSWORD" SMTP_USE_TLS="$SMTP_USE_TLS" \
@@ -262,34 +485,57 @@ use_tls = os.environ.get("SMTP_USE_TLS", "1") in ("1","true","yes","on")
 sender  = os.environ.get("SMTP_FROM", "agent@localhost")
 to      = os.environ.get("ALERT_EMAIL", "")
 
-if not host or not to:
-    sys.exit(0)
+body = """SIEM Africa - Test SMTP reussi !
 
-msg = MIMEText("SIEM Africa — Test de reconfiguration SMTP. Si vous recevez ce message, la nouvelle configuration fonctionne.", "plain", "utf-8")
+Si vous recevez ce message, votre agent peut maintenant vous envoyer
+des alertes de securite par email.
+
+Cordialement,
+Agent SIEM Africa
+"""
+
+msg = MIMEText(body, "plain", "utf-8")
 msg["From"] = sender
 msg["To"] = to
-msg["Subject"] = "[SIEM Africa] Reconfiguration SMTP test"
+msg["Subject"] = "[SIEM Africa] Test SMTP reussi"
 
 try:
     if port == 465:
-        s = smtplib.SMTP_SSL(host, port, timeout=15)
+        s = smtplib.SMTP_SSL(host, port, timeout=20)
     else:
-        s = smtplib.SMTP(host, port, timeout=15)
+        s = smtplib.SMTP(host, port, timeout=20)
         if use_tls:
             s.starttls()
     if user and pwd:
         s.login(user, pwd)
-    s.sendmail(sender, [to], msg.as_string())
+    s.sendmail(sender, [r.strip() for r in to.split(",") if r.strip()], msg.as_string())
     s.quit()
     sys.exit(0)
+except smtplib.SMTPAuthenticationError as e:
+    print(f"AUTHENTIFICATION ECHOUEE", file=sys.stderr)
+    print(f"  Verifiez SMTP_USER (email complet ?) et le mot de passe (App Password pour Gmail)", file=sys.stderr)
+    print(f"  Detail: {e}", file=sys.stderr)
+    sys.exit(2)
 except Exception as e:
     print(f"Erreur SMTP : {e}", file=sys.stderr)
     sys.exit(1)
 PYEOF
     then
-        log OK "$(t test_ok)"
+        log OK "Email de test envoyé avec succès !"
+        echo ""
+        echo "  ${C_GREEN}✓ Vérifiez votre boîte $ALERT_EMAIL${C_RESET}"
+        echo "  ${C_DIM}(pensez aussi à regarder le dossier ${C_BOLD}Spam${C_RESET}${C_DIM})${C_RESET}"
     else
-        log WARN "$(t test_fail)"
+        echo ""
+        log WARN "Test SMTP échoué — la configuration est quand même enregistrée"
+        echo ""
+        echo "  ${C_YELLOW}Causes possibles :${C_RESET}"
+        echo "    1. SMTP_USER incorrect (doit être l'email complet, pas juste le prénom)"
+        echo "    2. App Password incorrect (pour Gmail : 16 caractères)"
+        echo "    3. 2FA non activée sur le compte Gmail"
+        echo "    4. Pare-feu bloquant le port $SMTP_PORT"
+        echo ""
+        echo "  ${C_CYAN}Relancez ce script pour corriger : sudo ./configure_smtp.sh${C_RESET}"
     fi
 fi
 
@@ -298,15 +544,13 @@ fi
 # ============================================================================
 
 if systemctl is-enabled --quiet "$SERVICE_NAME" 2>/dev/null; then
-    log INFO "$(t restarting)"
+    log INFO "Redémarrage du service $SERVICE_NAME"
     if systemctl restart "$SERVICE_NAME"; then
         sleep 2
         if systemctl is-active --quiet "$SERVICE_NAME"; then
-            log OK "$(t restart_ok)"
+            log OK "Service redémarré"
         fi
     fi
-else
-    log INFO "$(t no_restart)"
 fi
 
 echo ""
