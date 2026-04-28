@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}Filtres FP - SIEM Africa{% endblock %}
+{% block page_title %}Filtres faux positifs{% endblock %}
+
+{% block content %}
+
+<div class="card">
+    <div class="card-header-actions">
+        <a href="{% url 'filter_create' %}" class="btn btn-primary">+ Nouveau filtre</a>
+        <div>
+            {% if show_inactive %}
+            <a href="{% url 'filters_list' %}" class="btn btn-sm btn-secondary">Actifs uniquement</a>
+            {% else %}
+            <a href="?all=1" class="btn btn-sm btn-secondary">Voir tous</a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    {% if filters %}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Nom</th>
+                <th>Type</th>
+                <th>Cible</th>
+                <th>Action</th>
+                <th>Hits</th>
+                <th>Expire</th>
+                <th>Statut</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for f in filters %}
+            <tr>
+                <td>
+                    <strong>{{ f.name|truncatechars:50 }}</strong>
+                    {% if f.reason %}<br><small class="text-muted">{{ f.reason|truncatechars:60 }}</small>{% endif %}
+                </td>
+                <td><span class="badge badge-{{ f.filter_type|lower }}">{{ f.filter_type }}</span></td>
+                <td>
+                    {% if f.signature_id %}sig <code>{{ f.signature_id }}</code>{% endif %}
+                    {% if f.src_ip %}<br>ip <code>{{ f.src_ip }}</code>{% endif %}
+                    {% if f.src_ip_pattern %}<br>regex <code>{{ f.src_ip_pattern }}</code>{% endif %}
+                </td>
+                <td><span class="badge action-{{ f.action|lower }}">{{ f.action }}</span></td>
+                <td>{{ f.hit_count|default:0 }}</td>
+                <td><small>{{ f.expires_at|default:"—"|truncatechars:16 }}</small></td>
+                <td>
+                    {% if f.is_active %}<span class="badge badge-success">Actif</span>
+                    {% else %}<span class="badge badge-muted">Inactif</span>{% endif %}
+                </td>
+                <td>
+                    {% if f.is_active %}
+                    <form method="post" action="{% url 'filter_delete' f.id %}" style="display:inline">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-sm btn-danger"
+                                onclick="return confirm('Désactiver ce filtre ?')">Supprimer</button>
+                    </form>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="empty-state">Aucun filtre {% if not show_inactive %}actif{% endif %}</p>
+    {% endif %}
+</div>
+
+{% endblock %}

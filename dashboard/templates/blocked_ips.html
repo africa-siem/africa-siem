@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block title %}IPs bloquées - SIEM Africa{% endblock %}
+{% block page_title %}IPs bloquées{% endblock %}
+
+{% block content %}
+
+<div class="card">
+    <div class="card-header-actions">
+        <p class="text-muted">IPs actuellement bloquées par iptables (Active Response)</p>
+        <div>
+            {% if show_inactive %}
+            <a href="{% url 'blocked_ips_list' %}" class="btn btn-sm btn-secondary">Actives uniquement</a>
+            {% else %}
+            <a href="?all=1" class="btn btn-sm btn-secondary">Voir l'historique</a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    {% if ips %}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>IP</th>
+                <th>Sévérité</th>
+                <th>Bloquée par</th>
+                <th>Raison</th>
+                <th>Bloquée à</th>
+                <th>Expire</th>
+                <th>Statut</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for ip in ips %}
+            <tr>
+                <td><code class="ip-block">{{ ip.ip_address }}</code></td>
+                <td><span class="severity-label sev-{{ ip.severity }}">{{ ip.severity|default:"—" }}</span></td>
+                <td>
+                    <span class="badge">{{ ip.blocked_by }}</span>
+                    {% if ip.blocked_by_user_email %}<br><small>{{ ip.blocked_by_user_email }}</small>{% endif %}
+                </td>
+                <td><small>{{ ip.reason|truncatechars:60 }}</small></td>
+                <td><small>{{ ip.blocked_at|truncatechars:16 }}</small></td>
+                <td><small>{{ ip.expires_at|default:"permanent"|truncatechars:16 }}</small></td>
+                <td>
+                    {% if ip.is_active %}<span class="badge badge-danger">BLOQUÉE</span>
+                    {% else %}<span class="badge badge-muted">Débloquée</span>{% endif %}
+                </td>
+                <td>
+                    {% if ip.is_active %}
+                    <form method="post" action="{% url 'unblock_ip' ip.id %}" style="display:inline">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-sm btn-warning"
+                                onclick="return confirm('Débloquer {{ ip.ip_address }} ?')">Débloquer</button>
+                    </form>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="empty-state">Aucune IP bloquée actuellement 🎉</p>
+    {% endif %}
+</div>
+
+{% endblock %}

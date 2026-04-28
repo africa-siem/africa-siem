@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}MITRE ATT&CK - SIEM Africa{% endblock %}
+{% block page_title %}Matrice MITRE ATT&CK{% endblock %}
+
+{% block content %}
+
+<div class="card">
+    <p class="text-muted">
+        Cette matrice affiche les <strong>14 tactiques</strong> et <strong>{{ matrix|length }} groupes de techniques</strong>
+        détectées par SIEM Africa. Les chiffres en rouge indiquent les alertes des <strong>30 derniers jours</strong>.
+    </p>
+    <p class="text-muted small">
+        Source : <a href="https://attack.mitre.org/" target="_blank">attack.mitre.org</a>
+    </p>
+</div>
+
+<div class="mitre-matrix">
+    {% for tactic in matrix %}
+    <div class="mitre-tactic">
+        <div class="mitre-tactic-header" title="{{ tactic.description }}">
+            <div class="mitre-tactic-id">{{ tactic.id }}</div>
+            <div class="mitre-tactic-name">{{ tactic.name }}</div>
+            <div class="mitre-tactic-count">{{ tactic.techniques|length }} techniques</div>
+        </div>
+        <div class="mitre-techniques">
+            {% for tech in tactic.techniques %}
+            <a href="{% url 'mitre_detail' tech.id %}"
+               class="mitre-tech {% if tech.alert_count_30d > 0 %}has-alerts{% endif %}"
+               title="{{ tech.description }}">
+                <span class="mitre-tech-id">{{ tech.id }}</span>
+                <span class="mitre-tech-name">{{ tech.name|truncatechars:40 }}</span>
+                {% if tech.alert_count_30d > 0 %}
+                <span class="mitre-tech-alerts">{{ tech.alert_count_30d }}</span>
+                {% endif %}
+                {% if tech.sig_count > 0 %}
+                <span class="mitre-tech-sigs">{{ tech.sig_count }} sigs</span>
+                {% endif %}
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+{% endblock %}

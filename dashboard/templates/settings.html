@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block title %}Paramètres - SIEM Africa{% endblock %}
+{% block page_title %}Paramètres système{% endblock %}
+
+{% block content %}
+
+<form method="post">
+    {% csrf_token %}
+
+    <div class="card">
+        <p class="text-muted">
+            ⚠️ Les changements sont rechargés par l'agent au prochain cycle (max 1 minute).
+            Pour forcer un rechargement immédiat : <code>sudo systemctl reload siem-agent</code>
+        </p>
+    </div>
+
+    {% for category, items in settings_grouped.items %}
+    <div class="card">
+        <h3 class="card-title">⚙️ {{ category|title }}</h3>
+        <table class="settings-table">
+            {% for setting in items %}
+            <tr>
+                <td class="setting-key">
+                    <strong>{{ setting.key }}</strong>
+                    {% if setting.description %}<br><small class="text-muted">{{ setting.description }}</small>{% endif %}
+                </td>
+                <td class="setting-value">
+                    {% if setting.value_type == 'bool' %}
+                        <select name="{{ setting.key }}">
+                            <option value="1" {% if setting.value == '1' %}selected{% endif %}>Activé</option>
+                            <option value="0" {% if setting.value == '0' %}selected{% endif %}>Désactivé</option>
+                        </select>
+                    {% elif setting.value_type == 'secret' %}
+                        <input type="password" name="{{ setting.key }}" value="{{ setting.value }}" placeholder="(secret)">
+                    {% elif setting.value_type == 'int' %}
+                        <input type="number" name="{{ setting.key }}" value="{{ setting.value }}">
+                    {% else %}
+                        <input type="text" name="{{ setting.key }}" value="{{ setting.value }}">
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+    {% endfor %}
+
+    <div class="form-actions">
+        <button type="submit" class="btn btn-primary">💾 Enregistrer les modifications</button>
+    </div>
+</form>
+
+{% endblock %}

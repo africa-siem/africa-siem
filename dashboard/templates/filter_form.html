@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+
+{% block title %}Nouveau filtre - SIEM Africa{% endblock %}
+{% block page_title %}Créer un filtre faux positif{% endblock %}
+
+{% block content %}
+
+<div class="card" style="max-width: 700px;">
+    <form method="post">
+        {% csrf_token %}
+
+        <div class="form-group">
+            <label for="name">Nom du filtre *</label>
+            <input type="text" id="name" name="name" required maxlength="200"
+                   placeholder="Ex: Ignorer scans légitimes du SOC">
+        </div>
+
+        <div class="form-group">
+            <label for="signature_id">Signature ID (laisser vide = toutes les signatures)</label>
+            <input type="text" id="signature_id" name="signature_id"
+                   placeholder="Ex: 5712 (Wazuh) ou 1100 (Snort)" autocomplete="off">
+            <div id="signature-suggestions" class="suggestions"></div>
+            <small class="text-muted">Tapez 2 caractères pour rechercher</small>
+        </div>
+
+        <div class="form-group">
+            <label for="src_ip">IP source (vide = toutes les IPs)</label>
+            <input type="text" id="src_ip" name="src_ip"
+                   placeholder="Ex: 192.168.1.50">
+        </div>
+
+        <div class="form-group">
+            <label for="action">Action *</label>
+            <select id="action" name="action" required>
+                <option value="IGNORE">IGNORE — Ne pas créer d'alerte</option>
+                <option value="DOWNGRADE">DOWNGRADE — Réduire la sévérité</option>
+                <option value="NOTIFY_ONLY">NOTIFY_ONLY — Créer mais sans email</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="reason">Raison (optionnel)</label>
+            <textarea id="reason" name="reason" rows="3"
+                      placeholder="Pourquoi ce filtre ? Contexte, ticket, validation par..."></textarea>
+        </div>
+
+        <div class="form-actions">
+            <a href="{% url 'filters_list' %}" class="btn btn-secondary">Annuler</a>
+            <button type="submit" class="btn btn-primary">Créer le filtre</button>
+        </div>
+    </form>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Autocomplete signature
+const sigInput = document.getElementById('signature_id');
+const sugBox = document.getElementById('signature-suggestions');
+let timer;
+
+sigInput.addEventListener('input', () => {
+    clearTimeout(timer);
+    const q = sigInput.value.trim();
+    if (q.length < 2) { sugBox.innerHTML = ''; return; }
+
+    timer = setTimeout(async () => {
+        try {
+            const r = await fetch(`/api/signatures/search/?q=${encodeURIComponent(q)}`);
+            const data = await r.json();
+            if (!data.results.length) {
+                sugBox.innerHTML = '<div class="suggestion-empty">Aucune signature</div>';
+                return;
+            }
+            sugBox.innerHTML = data.results.map(s =>
+                `<div class="suggestion-item" data-id="${s.id}">
+                    <strong>${s.id}</strong> · ${s.name} <small>(${s.severity})</small>
+                </div>`
+            ).join('');
+            sugBox.querySelectorAll('.suggestion-item').forEach(el => {
+                el.addEventListener('click', () => {
+                    sigInput.value = el.dataset.id;
+                    sugBox.innerHTML = '';
+                });
+            });
+        } catch (e) { console.error(e); }
+    }, 250);
+});
+</script>
+{% endblock %}

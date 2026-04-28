@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block title %}{{ technique.technique_id }} - SIEM Africa{% endblock %}
+{% block page_title %}{{ technique.technique_id }} · {{ technique.name }}{% endblock %}
+
+{% block content %}
+
+<div class="card">
+    <p>
+        <strong>Tactique :</strong>
+        <span class="badge">{{ technique.tactic_id }} · {{ technique.tactic_name }}</span>
+    </p>
+    <p>
+        <strong>Description :</strong> {{ technique.description }}
+    </p>
+    <p>
+        <a href="https://attack.mitre.org/techniques/{{ technique.technique_id }}/" target="_blank" class="btn btn-secondary btn-sm">
+            🔗 Documentation MITRE officielle
+        </a>
+        <a href="{% url 'mitre_matrix' %}" class="btn btn-secondary btn-sm">← Retour matrice</a>
+    </p>
+</div>
+
+<div class="card">
+    <h3 class="card-title">🚨 Alertes liées ({{ alerts|length }})</h3>
+    {% if alerts %}
+    <table class="data-table">
+        <thead>
+            <tr><th>Quand</th><th>Sévérité</th><th>Signature</th><th>IP</th><th>Statut</th></tr>
+        </thead>
+        <tbody>
+            {% for a in alerts %}
+            <tr>
+                <td><small>{{ a.created_at|truncatechars:16 }}</small></td>
+                <td><span class="severity-label sev-{{ a.severity }}">{{ a.severity }}</span></td>
+                <td><a href="{% url 'alert_detail' a.id %}">{{ a.sig_name|truncatechars:50 }}</a></td>
+                <td><code>{{ a.src_ip|default:"—" }}</code></td>
+                <td><span class="status-label status-{{ a.status }}">{{ a.status }}</span></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="empty-state">Aucune alerte pour cette technique 🎉</p>
+    {% endif %}
+</div>
+
+{% endblock %}

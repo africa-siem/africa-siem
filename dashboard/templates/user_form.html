@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}Nouvel utilisateur - SIEM Africa{% endblock %}
+{% block page_title %}Créer un utilisateur{% endblock %}
+
+{% block content %}
+
+<div class="card" style="max-width: 600px;">
+    <form method="post">
+        {% csrf_token %}
+
+        <div class="form-group">
+            <label for="email">Email *</label>
+            <input type="email" id="email" name="email" required autofocus>
+        </div>
+
+        <div class="form-group">
+            <label for="full_name">Nom complet</label>
+            <input type="text" id="full_name" name="full_name">
+        </div>
+
+        <div class="form-group">
+            <label for="password">Mot de passe initial *</label>
+            <input type="password" id="password" name="password" required minlength="8">
+            <small class="text-muted">L'utilisateur devra le changer à la 1ère connexion</small>
+        </div>
+
+        <div class="form-group">
+            <label for="role_id">Rôle *</label>
+            <select id="role_id" name="role_id" required>
+                <option value="">— Choisir —</option>
+                {% for r in roles %}
+                <option value="{{ r.id }}">{{ r.name }} ({{ r.code }}) - {{ r.description|truncatechars:60 }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="form-actions">
+            <a href="{% url 'users_list' %}" class="btn btn-secondary">Annuler</a>
+            <button type="submit" class="btn btn-primary">Créer l'utilisateur</button>
+        </div>
+    </form>
+</div>
+
+{% endblock %}

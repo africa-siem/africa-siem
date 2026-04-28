@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+
+{% block title %}Assistant IA - SIEM Africa{% endblock %}
+{% block page_title %}🧠 Assistant IA{% endblock %}
+
+{% block content %}
+
+<!-- Statut -->
+<div class="card">
+    {% if available %}
+    <p class="status-indicator status-ok">✅ {{ status_msg }}</p>
+    {% else %}
+    <p class="status-indicator status-error">⚠️ {{ status_msg }}</p>
+    <p class="text-muted small">Vérifier qu'Ollama est installé et démarré : <code>sudo systemctl status ollama</code></p>
+    {% endif %}
+</div>
+
+<!-- Actions rapides IA -->
+<div class="grid-2">
+    <div class="card">
+        <h3 class="card-title">📋 Résumé exécutif</h3>
+        <p class="text-muted small">L'IA analyse les dernières 24h et te donne un point de situation</p>
+        <button onclick="generateSummary()" class="btn btn-primary" id="summaryBtn" {% if not available %}disabled{% endif %}>
+            Générer le résumé
+        </button>
+        <div id="summaryOut" class="ai-content-box"></div>
+    </div>
+
+    <div class="card">
+        <h3 class="card-title">🔍 Suggestions de filtres</h3>
+        <p class="text-muted small">L'IA détecte les alertes répétitives et suggère des filtres FP</p>
+        <button onclick="generateSuggestions()" class="btn btn-primary" id="suggestBtn" {% if not available %}disabled{% endif %}>
+            Analyser et suggérer
+        </button>
+        <div id="suggestOut" class="ai-content-box"></div>
+    </div>
+</div>
+
+<!-- Chatbot -->
+<div class="card">
+    <h3 class="card-title">💬 Posez vos questions à l'IA</h3>
+    <p class="text-muted small">L'IA a accès aux alertes récentes et aux métriques. Posez n'importe quelle question.</p>
+
+    <div id="chatHistory" class="chat-history"></div>
+
+    <form id="chatForm" class="chat-form">
+        <input type="text" id="chatInput" placeholder="Ex: Quelles sont les menaces les plus critiques actuellement ?"
+               {% if not available %}disabled{% endif %} required maxlength="1000">
+        <button type="submit" class="btn btn-primary" {% if not available %}disabled{% endif %}>Envoyer</button>
+    </form>
+
+    <div class="chat-suggestions">
+        <p class="text-muted small">💡 Exemples :</p>
+        <button class="btn btn-sm btn-secondary" onclick="askQuestion('Quelles sont les menaces les plus critiques actuellement ?')">Menaces critiques</button>
+        <button class="btn btn-sm btn-secondary" onclick="askQuestion('Y a-t-il des attaquants récurrents à bloquer ?')">Attaquants récurrents</button>
+        <button class="btn btn-sm btn-secondary" onclick="askQuestion('Comment réduire le bruit des alertes ?')">Réduire le bruit</button>
+        <button class="btn btn-sm btn-secondary" onclick="askQuestion('Quelle est la situation générale ?')">Situation générale</button>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
+
+function getCookie(name) {
+    const v = `; ${document.cookie}`;
+    const parts = v.split(`; ${name}=`);
+    if (parts.length === 2) return parts.pop().split(';').shift();
+}
+
+async function generateSummary() {
+    const btn = document.getElementById('summaryBtn');
+    const out = document.getElementById('summaryOut');
+    btn.disabled = true;
+    btn.textContent = 'Génération...';
+    out.innerHTML = '<div class="ai-loading">⏳ L\'IA réfléchit...</div>';
+
+    try {
+        const r = await fetch('/ai/summary/');
+        const data = await r.json();
+        if (data.error) {
+            out.innerHTML = '<p class="text-muted">⚠️ ' + data.error + '</p>';
+        } else {
+            out.innerHTML = '<div class="ai-content">' + (data.summary || '').replace(/\n/g, '<br>') + '</div>';
+        }
+    } catch (e) {
+        out.innerHTML = '<p class="text-muted">Erreur : ' + e.message + '</p>';
+    }
+    btn.disabled = false;
+    btn.textContent = 'Régénérer';
+}
+
+async function generateSuggestions() {
+    const btn = document.getElementById('suggestBtn');
+    const out = document.getElementById('suggestOut');
+    btn.disabled = true;
+    btn.textContent = 'Analyse...';
+    out.innerHTML = '<div class="ai-loading">⏳ Analyse des 7 derniers jours...</div>';
+
+    try {
+        const r = await fetch('/ai/suggest-filters/');
+        const data = await r.json();
+        if (data.error) {
+            out.innerHTML = '<p class="text-muted">⚠️ ' + data.error + '</p>';
+        } else {
+            out.innerHTML = '<div class="ai-content">' + (data.suggestion || '').replace(/\n/g, '<br>') + '</div>';
+        }
+    } catch (e) {
+        out.innerHTML = '<p class="text-muted">Erreur : ' + e.message + '</p>';
+    }
+    btn.disabled = false;
+    btn.textContent = 'Régénérer';
+}
+
+const chatHistory = document.getElementById('chatHistory');
+const chatForm = document.getElementById('chatForm');
+const chatInput = document.getElementById('chatInput');
+
+function addMessage(role, text) {
+    const div = document.createElement('div');
+    div.className = 'chat-message chat-' + role;
+    div.innerHTML = '<strong>' + (role === 'user' ? '👤 Vous' : '🧠 IA') + '</strong>' +
+                    '<div class="chat-text">' + text.replace(/\n/g, '<br>') + '</div>';
+    chatHistory.appendChild(div);
+    chatHistory.scrollTop = chatHistory.scrollHeight;
+}
+
+async function askQuestion(question) {
+    chatInput.value = question;
+    chatForm.dispatchEvent(new Event('submit'));
+}
+
+chatForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const q = chatInput.value.trim();
+    if (!q) return;
+
+    addMessage('user', q);
+    chatInput.value = '';
+    chatInput.disabled = true;
+
+    addMessage('assistant', '⏳ Analyse en cours...');
+    const lastMsg = chatHistory.lastChild;
+
+    try {
+        const fd = new FormData();
+        fd.append('question', q);
+        fd.append('csrfmiddlewaretoken', getCookie('csrftoken'));
+
+        const r = await fetch('/ai/chat/', {
+            method: 'POST',
+            body: fd,
+            headers: {'X-CSRFToken': getCookie('csrftoken')}
+        });
+        const data = await r.json();
+        chatHistory.removeChild(lastMsg);
+        addMessage('assistant', data.answer || data.error || 'Pas de réponse');
+    } catch (err) {
+        chatHistory.removeChild(lastMsg);
+        addMessage('assistant', 'Erreur : ' + err.message);
+    }
+
+    chatInput.disabled = false;
+    chatInput.focus();
+});
+</script>
+
+{% csrf_token %}
+{% endblock %}

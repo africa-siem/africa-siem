@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+
+{% block title %}Alertes - SIEM Africa{% endblock %}
+{% block page_title %}Alertes ({{ total }}){% endblock %}
+
+{% block content %}
+
+<div class="card">
+    <form method="get" class="filter-bar">
+        <select name="severity">
+            <option value="">Toutes sévérités</option>
+            <option value="CRITICAL" {% if severity == 'CRITICAL' %}selected{% endif %}>CRITICAL</option>
+            <option value="HIGH" {% if severity == 'HIGH' %}selected{% endif %}>HIGH</option>
+            <option value="MEDIUM" {% if severity == 'MEDIUM' %}selected{% endif %}>MEDIUM</option>
+            <option value="LOW" {% if severity == 'LOW' %}selected{% endif %}>LOW</option>
+            <option value="INFO" {% if severity == 'INFO' %}selected{% endif %}>INFO</option>
+        </select>
+
+        <select name="status">
+            <option value="ACTIVE" {% if status == 'ACTIVE' %}selected{% endif %}>Actives</option>
+            <option value="" {% if not status %}selected{% endif %}>Toutes</option>
+            <option value="NEW" {% if status == 'NEW' %}selected{% endif %}>Nouvelles</option>
+            <option value="ACKNOWLEDGED" {% if status == 'ACKNOWLEDGED' %}selected{% endif %}>Reconnues</option>
+            <option value="INVESTIGATING" {% if status == 'INVESTIGATING' %}selected{% endif %}>En investigation</option>
+            <option value="RESOLVED" {% if status == 'RESOLVED' %}selected{% endif %}>Résolues</option>
+            <option value="FALSE_POSITIVE" {% if status == 'FALSE_POSITIVE' %}selected{% endif %}>Faux positifs</option>
+        </select>
+
+        <button type="submit" class="btn btn-secondary btn-sm">Filtrer</button>
+
+        <a href="{% url 'export_alerts_csv' %}?severity={{ severity }}&status={{ status }}&days=30"
+           class="btn btn-secondary btn-sm">📥 Export CSV (30j)</a>
+    </form>
+</div>
+
+<div class="card">
+    {% if alerts %}
+    <table class="data-table data-table-hover">
+        <thead>
+            <tr>
+                <th>Quand</th>
+                <th>Sévérité</th>
+                <th>Signature</th>
+                <th>IP source</th>
+                <th>Statut</th>
+                <th>Hits</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for a in alerts %}
+            <tr>
+                <td><small>{{ a.created_at|truncatechars:16 }}</small></td>
+                <td><span class="severity-label sev-{{ a.severity }}">{{ a.severity }}</span></td>
+                <td>
+                    <strong>{{ a.sig_name|default:a.title|truncatechars:60 }}</strong>
+                    <br>
+                    <small class="text-muted">
+                        sig #{{ a.signature_id }}
+                        {% if a.mitre_tech_id %} · {{ a.mitre_tech_id }}{% endif %}
+                    </small>
+                </td>
+                <td><code>{{ a.src_ip|default:"—" }}</code></td>
+                <td>
+                    <span class="status-label status-{{ a.status }}">{{ a.status }}</span>
+                </td>
+                <td>{% if a.event_count > 1 %}<span class="badge">{{ a.event_count }}</span>{% else %}1{% endif %}</td>
+                <td>
+                    <a href="{% url 'alert_detail' a.id %}" class="btn btn-sm btn-secondary">Voir</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <div class="pagination">
+        {% if has_prev %}
+        <a href="?{% if severity %}severity={{ severity }}&{% endif %}status={{ status }}&page={{ page|add:'-1' }}" class="btn btn-secondary btn-sm">← Précédent</a>
+        {% endif %}
+        <span class="pagination-info">Page {{ page }}</span>
+        {% if has_next %}
+        <a href="?{% if severity %}severity={{ severity }}&{% endif %}status={{ status }}&page={{ page|add:'1' }}" class="btn btn-secondary btn-sm">Suivant →</a>
+        {% endif %}
+    </div>
+
+    {% else %}
+    <p class="empty-state">Aucune alerte trouvée</p>
+    {% endif %}
+</div>
+
+{% endblock %}

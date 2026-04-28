@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+
+{% block title %}Utilisateurs - SIEM Africa{% endblock %}
+{% block page_title %}Gestion des utilisateurs{% endblock %}
+
+{% block content %}
+
+<div class="card">
+    <div class="card-header-actions">
+        <p class="text-muted">{{ users|length }} utilisateur(s)</p>
+        <a href="{% url 'user_create' %}" class="btn btn-primary">+ Nouvel utilisateur</a>
+    </div>
+</div>
+
+<div class="card">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Email</th>
+                <th>Nom complet</th>
+                <th>Rôle</th>
+                <th>Dernière connexion</th>
+                <th>Statut</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for u in users %}
+            <tr>
+                <td><strong>{{ u.email }}</strong>
+                    {% if u.id == siem_user.id %}<span class="badge badge-success">Vous</span>{% endif %}
+                </td>
+                <td>{{ u.full_name|default:"—" }}</td>
+                <td><span class="badge badge-{{ u.role_code|lower }}">{{ u.role_name }}</span></td>
+                <td><small>{{ u.last_login_at|default:"jamais"|truncatechars:16 }}</small></td>
+                <td>
+                    {% if u.is_active %}<span class="badge badge-success">Actif</span>
+                    {% else %}<span class="badge badge-muted">Désactivé</span>{% endif %}
+                </td>
+                <td>
+                    {% if u.id != siem_user.id %}
+                    <form method="post" action="{% url 'user_toggle' u.id %}" style="display:inline">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-sm btn-secondary">
+                            {% if u.is_active %}Désactiver{% else %}Activer{% endif %}
+                        </button>
+                    </form>
+                    <form method="post" action="{% url 'user_delete' u.id %}" style="display:inline">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-sm btn-danger"
+                                onclick="return confirm('Supprimer {{ u.email }} ?')">Supprimer</button>
+                    </form>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% endblock %}

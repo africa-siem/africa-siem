@@ -1,0 +1,280 @@
+{% extends "base.html" %}
+
+{% block title %}Tableau de bord - SIEM Africa{% endblock %}
+{% block page_title %}Tableau de bord{% endblock %}
+
+{% block content %}
+
+<!-- Métriques principales -->
+<div class="metrics-grid">
+    <div class="metric-card metric-critical">
+        <div class="metric-icon">🔴</div>
+        <div class="metric-content">
+            <div class="metric-value">{{ metrics.critical_open }}</div>
+            <div class="metric-label">Critiques actives</div>
+        </div>
+    </div>
+
+    <div class="metric-card metric-active">
+        <div class="metric-icon">⚠️</div>
+        <div class="metric-content">
+            <div class="metric-value">{{ metrics.active_alerts }}</div>
+            <div class="metric-label">Alertes actives</div>
+        </div>
+    </div>
+
+    <div class="metric-card metric-blocked">
+        <div class="metric-icon">🚫</div>
+        <div class="metric-content">
+            <div class="metric-value">{{ metrics.blocked_ips }}</div>
+            <div class="metric-label">IPs bloquées</div>
+        </div>
+    </div>
+
+    <div class="metric-card metric-honeypot">
+        <div class="metric-icon">🍯</div>
+        <div class="metric-content">
+            <div class="metric-value">{{ metrics.honeypot_24h }}</div>
+            <div class="metric-label">Honeypot hits (24h)</div>
+        </div>
+    </div>
+</div>
+
+<!-- IA Quick Summary Banner -->
+<div class="card ai-banner" id="aiBanner">
+    <div class="ai-banner-header">
+        <h3>🧠 Résumé exécutif IA</h3>
+        <button onclick="loadAISummary()" class="btn btn-sm btn-secondary" id="aiRefreshBtn">Générer</button>
+    </div>
+    <div id="aiSummary" class="ai-summary-content">
+        <p class="text-muted">Cliquez sur "Générer" pour obtenir un résumé IA des dernières 24h.</p>
+    </div>
+</div>
+
+<!-- Graphiques principaux -->
+<div class="grid-2">
+    <div class="card">
+        <h3 class="card-title">📈 Alertes sur 7 jours</h3>
+        <canvas id="timelineChart" height="200"></canvas>
+    </div>
+
+    <div class="card">
+        <h3 class="card-title">🕐 Distribution horaire (24h)</h3>
+        <canvas id="hourlyChart" height="200"></canvas>
+    </div>
+</div>
+
+<div class="grid-2">
+    <div class="card">
+        <h3 class="card-title">📊 Alertes par sévérité (24h)</h3>
+        <div class="severity-bars">
+            <div class="severity-row">
+                <span class="severity-label sev-CRITICAL">CRITICAL</span>
+                <span class="severity-count">{{ metrics.by_severity_24h.CRITICAL|default:0 }}</span>
+            </div>
+            <div class="severity-row">
+                <span class="severity-label sev-HIGH">HIGH</span>
+                <span class="severity-count">{{ metrics.by_severity_24h.HIGH|default:0 }}</span>
+            </div>
+            <div class="severity-row">
+                <span class="severity-label sev-MEDIUM">MEDIUM</span>
+                <span class="severity-count">{{ metrics.by_severity_24h.MEDIUM|default:0 }}</span>
+            </div>
+            <div class="severity-row">
+                <span class="severity-label sev-LOW">LOW</span>
+                <span class="severity-count">{{ metrics.by_severity_24h.LOW|default:0 }}</span>
+            </div>
+            <div class="severity-row">
+                <span class="severity-label sev-INFO">INFO</span>
+                <span class="severity-count">{{ metrics.by_severity_24h.INFO|default:0 }}</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3 class="card-title">🥧 Catégories d'alertes (7j)</h3>
+        <canvas id="categoryChart" height="200"></canvas>
+    </div>
+</div>
+
+<!-- Top attackers + signatures -->
+<div class="grid-2">
+    <div class="card">
+        <h3 class="card-title">🎯 Top 5 attaquants (7 jours)</h3>
+        {% if metrics.top_attackers %}
+        <table class="data-table">
+            <thead>
+                <tr><th>IP</th><th>Alertes</th><th>Sévérité max</th></tr>
+            </thead>
+            <tbody>
+                {% for a in metrics.top_attackers %}
+                <tr>
+                    <td><code>{{ a.src_ip }}</code></td>
+                    <td><span class="badge">{{ a.nb }}</span></td>
+                    <td><span class="severity-label sev-{{ a.max_severity }}">{{ a.max_severity }}</span></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="empty-state">Aucun attaquant détecté</p>
+        {% endif %}
+    </div>
+
+    <div class="card">
+        <h3 class="card-title">🔥 Top 5 signatures (24h)</h3>
+        {% if metrics.top_signatures %}
+        <table class="data-table">
+            <thead>
+                <tr><th>Signature</th><th>Sévérité</th><th>Hits</th></tr>
+            </thead>
+            <tbody>
+                {% for s in metrics.top_signatures %}
+                <tr>
+                    <td>
+                        <code>{{ s.signature_id }}</code>
+                        <small class="text-muted d-block">{{ s.name|truncatechars:50 }}</small>
+                    </td>
+                    <td><span class="severity-label sev-{{ s.severity }}">{{ s.severity }}</span></td>
+                    <td><span class="badge">{{ s.nb }}</span></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="empty-state">Aucune signature déclenchée</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Alertes récentes -->
+<div class="card">
+    <h3 class="card-title">🕐 Alertes récentes</h3>
+    {% if recent_alerts %}
+    <table class="data-table">
+        <thead>
+            <tr><th>Quand</th><th>Sévérité</th><th>Type</th><th>IP source</th><th>Statut</th></tr>
+        </thead>
+        <tbody>
+            {% for a in recent_alerts %}
+            <tr>
+                <td><small>{{ a.created_at|truncatechars:16 }}</small></td>
+                <td><span class="severity-label sev-{{ a.severity }}">{{ a.severity }}</span></td>
+                <td>
+                    <a href="{% url 'alert_detail' a.id %}">{{ a.sig_name|truncatechars:50 }}</a>
+                </td>
+                <td><code>{{ a.src_ip|default:"—" }}</code></td>
+                <td><span class="status-label status-{{ a.status }}">{{ a.status }}</span></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <a href="{% url 'alerts_list' %}" class="btn btn-secondary btn-sm">Voir toutes →</a>
+    {% else %}
+    <p class="empty-state">Aucune alerte récente</p>
+    {% endif %}
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// === IA Summary ===
+async function loadAISummary() {
+    const btn = document.getElementById('aiRefreshBtn');
+    const out = document.getElementById('aiSummary');
+    btn.disabled = true;
+    btn.textContent = 'Génération...';
+    out.innerHTML = '<div class="ai-loading">⏳ L\'IA analyse les dernières 24h...</div>';
+
+    try {
+        const r = await fetch('/ai/summary/');
+        const data = await r.json();
+        if (data.error) {
+            out.innerHTML = '<p class="text-muted">⚠️ ' + data.error + '</p>';
+        } else {
+            out.innerHTML = '<div class="ai-content">' + (data.summary || '').replace(/\n/g, '<br>') + '</div>';
+        }
+    } catch (e) {
+        out.innerHTML = '<p class="text-muted">Erreur : ' + e.message + '</p>';
+    }
+
+    btn.disabled = false;
+    btn.textContent = 'Régénérer';
+}
+
+// === Charts Chart.js ===
+const chartColors = {
+    critical: '#cf222e',
+    high: '#fb8500',
+    medium: '#d29922',
+    low: '#1f883d',
+    info: '#0969da',
+};
+
+Chart.defaults.color = '#8b949e';
+Chart.defaults.borderColor = '#30363d';
+
+// Timeline 7 jours
+fetch('/api/charts/timeline/?days=7').then(r => r.json()).then(d => {
+    const labels = d.data.map(r => r.day);
+    new Chart(document.getElementById('timelineChart'), {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                { label: 'Critical', data: d.data.map(r => r.critical), borderColor: chartColors.critical, backgroundColor: chartColors.critical + '33', tension: 0.3 },
+                { label: 'High', data: d.data.map(r => r.high), borderColor: chartColors.high, backgroundColor: chartColors.high + '33', tension: 0.3 },
+                { label: 'Medium', data: d.data.map(r => r.medium), borderColor: chartColors.medium, backgroundColor: chartColors.medium + '33', tension: 0.3 },
+                { label: 'Low', data: d.data.map(r => r.low), borderColor: chartColors.low, backgroundColor: chartColors.low + '33', tension: 0.3 },
+            ]
+        },
+        options: {
+            responsive: true,
+            interaction: { mode: 'index', intersect: false },
+            plugins: { legend: { position: 'top' } },
+            scales: { y: { beginAtZero: true } }
+        }
+    });
+});
+
+// Distribution horaire 24h
+fetch('/api/charts/hourly/').then(r => r.json()).then(d => {
+    const hours = Array.from({length:24}, (_,i) => String(i).padStart(2,'0') + 'h');
+    const data = new Array(24).fill(0);
+    d.data.forEach(r => { data[parseInt(r.hour)] = r.nb; });
+
+    new Chart(document.getElementById('hourlyChart'), {
+        type: 'bar',
+        data: {
+            labels: hours,
+            datasets: [{ label: 'Alertes', data: data, backgroundColor: '#00a8e8' }]
+        },
+        options: {
+            responsive: true,
+            plugins: { legend: { display: false } },
+            scales: { y: { beginAtZero: true } }
+        }
+    });
+});
+
+// Catégories
+fetch('/api/charts/categories/').then(r => r.json()).then(d => {
+    const labels = d.data.map(r => r.category);
+    const data = d.data.map(r => r.nb);
+    const colors = d.data.map(r => r.color_hex || '#8b949e');
+
+    new Chart(document.getElementById('categoryChart'), {
+        type: 'doughnut',
+        data: {
+            labels: labels,
+            datasets: [{ data: data, backgroundColor: colors }]
+        },
+        options: {
+            responsive: true,
+            plugins: { legend: { position: 'right' } }
+        }
+    });
+});
+</script>
+{% endblock %}

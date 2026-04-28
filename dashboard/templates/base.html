@@ -1,0 +1,117 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}SIEM Africa{% endblock %}</title>
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='10' fill='%2300a8e8'/><path d='M12 6l4 6h-3v6h-2v-6H8z' fill='white'/></svg>">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body class="{% block body_class %}{% endblock %}">
+
+{% if siem_user %}
+<aside class="sidebar">
+    <div class="sidebar-brand">
+        <h1>🛡️ SIEM Africa</h1>
+        <p class="brand-subtitle">Centre d'opérations de sécurité</p>
+    </div>
+
+    <nav class="sidebar-nav">
+        <div class="nav-section">
+            <div class="nav-section-title">Surveillance</div>
+            <a href="{% url 'home' %}" class="nav-link {% if request.resolver_match.url_name == 'home' %}active{% endif %}">
+                <span class="nav-icon">📊</span> Tableau de bord
+            </a>
+            <a href="{% url 'alerts_list' %}" class="nav-link {% if 'alert' in request.resolver_match.url_name %}active{% endif %}">
+                <span class="nav-icon">🚨</span> Alertes
+            </a>
+            <a href="{% url 'mitre_matrix' %}" class="nav-link {% if 'mitre' in request.resolver_match.url_name %}active{% endif %}">
+                <span class="nav-icon">🎯</span> MITRE ATT&CK
+            </a>
+            <a href="{% url 'honeypot' %}" class="nav-link {% if request.resolver_match.url_name == 'honeypot' %}active{% endif %}">
+                <span class="nav-icon">🍯</span> Honeypot
+            </a>
+        </div>
+
+        <div class="nav-section">
+            <div class="nav-section-title">Réponse</div>
+            <a href="{% url 'filters_list' %}" class="nav-link {% if 'filter' in request.resolver_match.url_name %}active{% endif %}">
+                <span class="nav-icon">🔍</span> Filtres FP
+            </a>
+            <a href="{% url 'blocked_ips_list' %}" class="nav-link {% if 'blocked_ip' in request.resolver_match.url_name or 'unblock' in request.resolver_match.url_name %}active{% endif %}">
+                <span class="nav-icon">🚫</span> IPs bloquées
+            </a>
+        </div>
+
+        <div class="nav-section">
+            <div class="nav-section-title">Intelligence</div>
+            <a href="{% url 'ai' %}" class="nav-link {% if 'ai' in request.resolver_match.url_name %}active{% endif %}">
+                <span class="nav-icon">🧠</span> Assistant IA
+            </a>
+        </div>
+
+        <div class="nav-section">
+            <div class="nav-section-title">Administration</div>
+            <a href="{% url 'users_list' %}" class="nav-link {% if 'user' in request.resolver_match.url_name %}active{% endif %}">
+                <span class="nav-icon">👥</span> Utilisateurs
+            </a>
+            <a href="{% url 'settings' %}" class="nav-link {% if request.resolver_match.url_name == 'settings' %}active{% endif %}">
+                <span class="nav-icon">⚙️</span> Paramètres
+            </a>
+        </div>
+    </nav>
+
+    <div class="sidebar-footer">
+        <div class="user-card">
+            <div class="user-avatar">{{ siem_user.email|first|upper }}</div>
+            <div class="user-info">
+                <div class="user-email">{{ siem_user.email }}</div>
+                <div class="user-role">{{ siem_user.role_name }}</div>
+            </div>
+        </div>
+        <a href="{% url 'logout' %}" class="logout-btn">⏻ Déconnexion</a>
+    </div>
+</aside>
+
+<main class="main-content">
+    <header class="topbar">
+        <h2 class="page-title">{% block page_title %}{% endblock %}</h2>
+        <div class="topbar-actions">
+            {% if unread_notifications %}
+            <span class="badge badge-warning">🔔 {{ unread_notifications }}</span>
+            {% endif %}
+        </div>
+    </header>
+
+    {% if messages %}
+    <div class="messages">
+        {% for message in messages %}
+        <div class="alert alert-{{ message.tags }}">{{ message }}</div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="content-wrapper">
+        {% block content %}{% endblock %}
+    </div>
+</main>
+
+{% else %}
+
+{% if messages %}
+<div class="messages-public">
+    {% for message in messages %}
+    <div class="alert alert-{{ message.tags }}">{{ message }}</div>
+    {% endfor %}
+</div>
+{% endif %}
+
+{% block public_content %}{% endblock %}
+
+{% endif %}
+
+{% block extra_js %}{% endblock %}
+</body>
+</html>

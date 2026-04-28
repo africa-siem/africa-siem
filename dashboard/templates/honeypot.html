@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+
+{% block title %}Honeypot - SIEM Africa{% endblock %}
+{% block page_title %}Honeypot - Pièges actifs{% endblock %}
+
+{% block content %}
+
+<div class="card">
+    <p class="text-muted">
+        Les honeypots sont des faux services SSH (port 2222), HTTP (8888) et MySQL (3307).
+        <strong>Toute connexion est suspecte par définition</strong> et déclenche un blocage automatique.
+    </p>
+</div>
+
+<!-- Stats par type -->
+<div class="metrics-grid">
+    <div class="metric-card">
+        <div class="metric-icon">🔑</div>
+        <div class="metric-content">
+            <div class="metric-value">{{ stats.SSH.nb|default:0 }}</div>
+            <div class="metric-label">SSH Hits (30j)</div>
+            {% if stats.SSH %}<small class="text-muted">{{ stats.SSH.unique_ips }} IPs uniques</small>{% endif %}
+        </div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-icon">🌐</div>
+        <div class="metric-content">
+            <div class="metric-value">{{ stats.HTTP.nb|default:0 }}</div>
+            <div class="metric-label">HTTP Hits (30j)</div>
+            {% if stats.HTTP %}<small class="text-muted">{{ stats.HTTP.unique_ips }} IPs uniques</small>{% endif %}
+        </div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-icon">🗄️</div>
+        <div class="metric-content">
+            <div class="metric-value">{{ stats.MYSQL.nb|default:0 }}</div>
+            <div class="metric-label">MySQL Hits (30j)</div>
+            {% if stats.MYSQL %}<small class="text-muted">{{ stats.MYSQL.unique_ips }} IPs uniques</small>{% endif %}
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <h3 class="card-title">🎯 Tentatives récentes</h3>
+    {% if hits %}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Quand</th>
+                <th>Type</th>
+                <th>IP source</th>
+                <th>Username tenté</th>
+                <th>HTTP Path</th>
+                <th>Détails</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for h in hits %}
+            <tr>
+                <td><small>{{ h.hit_at|truncatechars:16 }}</small></td>
+                <td><span class="badge">{{ h.honeypot_type }}:{{ h.honeypot_port }}</span></td>
+                <td><code class="ip-block">{{ h.src_ip }}</code></td>
+                <td>{{ h.username_attempted|default:"—" }}</td>
+                <td><small>{{ h.http_path|default:"—"|truncatechars:40 }}</small></td>
+                <td><small class="text-muted">{{ h.user_agent|default:""|truncatechars:50 }}</small></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="empty-state">Aucune tentative détectée 🎉</p>
+    {% endif %}
+</div>
+
+{% endblock %}

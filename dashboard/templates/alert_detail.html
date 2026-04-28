@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+
+{% block title %}Alerte #{{ alert.id }} - SIEM Africa{% endblock %}
+{% block page_title %}Alerte #{{ alert.id }}{% endblock %}
+
+{% block content %}
+
+<div class="grid-2">
+    <!-- Détails alerte -->
+    <div class="card">
+        <h3 class="card-title">📋 Détails</h3>
+        <table class="detail-table">
+            <tr><th>Sévérité</th><td><span class="severity-label sev-{{ alert.severity }}">{{ alert.severity }}</span></td></tr>
+            <tr><th>Statut</th><td><span class="status-label status-{{ alert.status }}">{{ alert.status }}</span></td></tr>
+            <tr><th>Confiance</th><td>{{ alert.confidence|default:"—" }}%</td></tr>
+            <tr><th>Signature</th><td><code>{{ alert.signature_id }}</code> · {{ alert.sig_name }}</td></tr>
+            <tr><th>Source</th><td>{{ alert.sig_source }}</td></tr>
+            <tr><th>IP source</th><td><code>{{ alert.src_ip|default:"—" }}</code></td></tr>
+            <tr><th>IP destination</th><td><code>{{ alert.dst_ip|default:"—" }}</code></td></tr>
+            <tr><th>Événements</th><td>{{ alert.event_count }}</td></tr>
+            <tr><th>Première vue</th><td>{{ alert.first_seen }}</td></tr>
+            <tr><th>Dernière vue</th><td>{{ alert.last_seen }}</td></tr>
+            {% if alert.mitre_tech_id %}
+            <tr><th>MITRE</th><td>
+                <a href="{% url 'mitre_detail' alert.mitre_tech_id %}">
+                    {{ alert.mitre_tech_id }} · {{ alert.mitre_tech_name }}
+                </a>
+                {% if alert.mitre_tac_name %}<br><small>{{ alert.mitre_tac_name }}</small>{% endif %}
+            </td></tr>
+            {% endif %}
+        </table>
+    </div>
+
+    <!-- Actions -->
+    <div class="card">
+        <h3 class="card-title">⚙️ Actions</h3>
+
+        {% if alert.sig_desc %}
+        <div class="info-block">
+            <h4>Description</h4>
+            <p>{{ alert.sig_desc }}</p>
+        </div>
+        {% endif %}
+
+        {% if alert.sig_remediation %}
+        <div class="info-block">
+            <h4>Remédiation suggérée</h4>
+            <p>{{ alert.sig_remediation }}</p>
+        </div>
+        {% endif %}
+
+        <form method="post" action="{% url 'alert_action' alert.id %}" class="action-form">
+            {% csrf_token %}
+            <div class="form-group">
+                <label>Marquer comme :</label>
+                <select name="action" required>
+                    <option value="">— Choisir —</option>
+                    <option value="ACKNOWLEDGED">Reconnu</option>
+                    <option value="INVESTIGATING">En investigation</option>
+                    <option value="RESOLVED">Résolu</option>
+                    <option value="FALSE_POSITIVE">Faux positif</option>
+                    <option value="IGNORED">Ignoré</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Notes (optionnel)</label>
+                <textarea name="notes" rows="3" placeholder="Contexte, action prise..."></textarea>
+            </div>
+            <button type="submit" class="btn btn-primary">Appliquer</button>
+        </form>
+    </div>
+</div>
+
+<!-- IA Explanation -->
+<div class="card">
+    <div class="card-header-actions">
+        <h3 class="card-title" style="border:none;padding:0;margin:0;">🧠 Explication IA</h3>
+        <button onclick="explainAlert()" class="btn btn-secondary btn-sm" id="explainBtn">
+            {% if ai %}🔄 Régénérer{% else %}✨ Générer une explication{% endif %}
+        </button>
+    </div>
+
+    <div id="aiExplanation" class="ai-content-box">
+        {% if ai %}
+        <div class="ai-content">{{ ai.explanation_fr|default:ai.explanation_en|linebreaksbr }}</div>
+        <p class="text-muted small">
+            Modèle : {{ ai.ai_model }} · Généré : {{ ai.created_at|truncatechars:16 }}
+            {% if ai.cache_hits %} · Réutilisé {{ ai.cache_hits }} fois{% endif %}
+        </p>
+        {% else %}
+        <p class="text-muted">Cliquez sur "Générer" pour obtenir une explication IA personnalisée.</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Enrichissement -->
+{% if enriched %}
+<div class="card">
+    <h3 class="card-title">🔍 Contexte enrichi</h3>
+    <pre class="json-display">{{ enriched|pprint }}</pre>
+</div>
+{% endif %}
+
+<!-- Notes -->
+{% if alert.resolution_notes %}
+<div class="card">
+    <h3 class="card-title">📝 Notes de résolution</h3>
+    <p>{{ alert.resolution_notes|linebreaks }}</p>
+    {% if alert.resolved_at %}<p class="text-muted small">Résolu le {{ alert.resolved_at|truncatechars:16 }}</p>{% endif %}
+</div>
+{% endif %}
+
+<a href="{% url 'alerts_list' %}" class="btn btn-secondary">← Retour aux alertes</a>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function explainAlert() {
+    const btn = document.getElementById('explainBtn');
+    const out = document.getElementById('aiExplanation');
+    btn.disabled = true;
+    btn.textContent = '⏳ Génération...';
+    out.innerHTML = '<div class="ai-loading">⏳ L\'IA analyse l\'alerte...</div>';
+
+    try {
+        const r = await fetch('/ai/explain/{{ alert.id }}/');
+        const data = await r.json();
+        if (data.error) {
+            out.innerHTML = '<p class="text-muted">⚠️ ' + data.error + '</p>';
+        } else {
+            const cachedTag = data.cached ? ' <span class="badge badge-success">Cache</span>' : '';
+            out.innerHTML = '<div class="ai-content">' + data.explanation.replace(/\n/g, '<br>') + '</div>' +
+                            '<p class="text-muted small">Modèle : ' + data.model + cachedTag + '</p>';
+        }
+    } catch (e) {
+        out.innerHTML = '<p class="text-muted">Erreur : ' + e.message + '</p>';
+    }
+    btn.disabled = false;
+    btn.textContent = '🔄 Régénérer';
+}
+</script>
+{% endblock %}
