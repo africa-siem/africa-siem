@@ -184,26 +184,57 @@ printf "  %s✓%s static/css/style.css\n" "$C_GREEN" "$C_RESET"
 log_ok "Tous les fichiers téléchargés"
 
 # ============================================================================
-# PHASE 3 : INSTALLATION DEPENDANCES PYTHON
+# PHASE 3 : INSTALLATION DEPENDANCES PYTHON (via venv)
 # ============================================================================
 section "PHASE 3 : Installation des dépendances Python"
 
-log_info "Installation Django + gunicorn + whitenoise + bcrypt"
-pip3 install --quiet --break-system-packages \
-    'django>=4.2,<5.0' \
-    'gunicorn>=21.0' \
-    'whitenoise>=6.0' \
-    'bcrypt>=4.0' 2>&1 | tail -5 || \
-pip3 install --quiet \
-    'django>=4.2,<5.0' \
-    'gunicorn>=21.0' \
-    'whitenoise>=6.0' \
-    'bcrypt>=4.0' 2>&1 | tail -5
+# 1. S'assurer que python3-pip et python3-venv sont installés
+log_info "Vérification de pip et venv"
+NEED_INSTALL=""
+if ! command -v pip3 >/dev/null 2>&1; then
+    NEED_INSTALL="$NEED_INSTALL python3-pip"
+fi
+if ! python3 -c "import venv" 2>/dev/null; then
+    NEED_INSTALL="$NEED_INSTALL python3-venv"
+fi
+# python3-dev parfois nécessaire pour bcrypt
+NEED_INSTALL="$NEED_INSTALL python3-dev build-essential"
 
-# Vérifier
-python3 -c "import django; print(f'Django {django.__version__}')" 2>/dev/null && \
-    log_ok "Django installé : $(python3 -c 'import django; print(django.__version__)')" || \
-    abort "Django non installé"
+if [ -n "$NEED_INSTALL" ]; then
+    log_info "Installation des paquets système :$NEED_INSTALL"
+    apt-get update -qq >/dev/null 2>&1
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq $NEED_INSTALL >/dev/null 2>&1 || \
+        log_warn "Certains paquets n'ont pas pu être installés"
+fi
+
+# Vérification post-install
+command -v pip3 >/dev/null 2>&1 || abort "pip3 introuvable après installation. Lancez : sudo apt install python3-pip python3-venv"
+log_ok "pip3 disponible : $(pip3 --version | head -c 50)..."
+
+# 2. Créer le virtualenv dédié au dashboard
+VENV_DIR="${INSTALL_DIR}/venv"
+log_info "Création du virtualenv : $VENV_DIR"
+mkdir -p "$INSTALL_DIR"
+python3 -m venv "$VENV_DIR" 2>>"$LOG_DIR/dashboard-install.log" || \
+    abort "Création venv échouée. Vérifier python3-venv installé."
+log_ok "Virtualenv créé"
+
+# 3. Installer les dépendances DANS le venv
+log_info "Installation Django + gunicorn + whitenoise + bcrypt (dans venv)"
+"$VENV_DIR/bin/pip" install --quiet --upgrade pip 2>>"$LOG_DIR/dashboard-install.log" || true
+"$VENV_DIR/bin/pip" install --quiet \
+    'django>=4.2,<5.0' \
+    'gunicorn>=21.0' \
+    'whitenoise>=6.0' \
+    'bcrypt>=4.0' 2>>"$LOG_DIR/dashboard-install.log" || \
+    abort "Installation pip échouée. Voir : $LOG_DIR/dashboard-install.log"
+
+# Vérifier Django
+DJANGO_VERSION=$("$VENV_DIR/bin/python" -c "import django; print(django.__version__)" 2>/dev/null)
+[ -n "$DJANGO_VERSION" ] || abort "Django non installé"
+log_ok "Django installé : $DJANGO_VERSION"
+log_ok "Gunicorn installé : $("$VENV_DIR/bin/gunicorn" --version 2>&1 | head -1)"
+log_ok "bcrypt installé"
 
 # ============================================================================
 # PHASE 4 : PREPARATION SYSTEME
@@ -278,11 +309,11 @@ section "PHASE 7 : Initialisation Django"
 cd "$INSTALL_DIR"
 
 # Créer la BDD des sessions Django
-sudo -u "$SYSTEM_USER" python3 manage.py migrate --run-syncdb >> "$LOG_DIR/dashboard-install.log" 2>&1
+sudo -u "$SYSTEM_USER" "$VENV_DIR/bin/python" manage.py migrate --run-syncdb >> "$LOG_DIR/dashboard-install.log" 2>&1
 log_ok "BDD sessions Django initialisée"
 
 # Collecter les fichiers statiques
-sudo -u "$SYSTEM_USER" python3 manage.py collectstatic --noinput >> "$LOG_DIR/dashboard-install.log" 2>&1
+sudo -u "$SYSTEM_USER" "$VENV_DIR/bin/python" manage.py collectstatic --noinput >> "$LOG_DIR/dashboard-install.log" 2>&1
 log_ok "Fichiers statiques collectés"
 
 # ============================================================================
@@ -302,7 +333,7 @@ Type=simple
 User=${SYSTEM_USER}
 Group=${SYSTEM_GROUP}
 WorkingDirectory=${INSTALL_DIR}
-ExecStart=/usr/bin/python3 -m gunicorn \\
+ExecStart=${VENV_DIR}/bin/gunicorn \\
     --bind 0.0.0.0:${PORT} \\
     --workers 3 \\
     --timeout 120 \\
