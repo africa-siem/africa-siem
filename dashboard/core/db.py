@@ -96,7 +96,7 @@ def increment_failed_login(user_id):
 def update_password(user_id, new_password_hash):
     execute(
         "UPDATE users SET password_hash = ?, password_changed_at = CURRENT_TIMESTAMP, "
-        "must_change_password = 0 WHERE id = ?",
+        "must_change_pwd = 0 WHERE id = ?",
         (new_password_hash, user_id)
     )
 
@@ -521,7 +521,9 @@ def get_honeypot_stats():
 
 def list_users():
     return fetchall("""
-        SELECT u.*, r.code AS role_code, r.name AS role_name
+        SELECT u.*,
+               TRIM(COALESCE(u.first_name, '') || ' ' || COALESCE(u.last_name, '')) AS full_name,
+               r.code AS role_code, r.name AS role_name
         FROM users u
         JOIN roles r ON u.role_id = r.id
         WHERE u.deleted_at IS NULL
@@ -534,13 +536,20 @@ def list_roles():
 
 
 def create_user(email, password_hash, role_id, full_name=None):
+    """full_name est splitté en first_name + last_name (schéma M2)."""
     import uuid
+    first_name = ""
+    last_name = ""
+    if full_name:
+        parts = full_name.strip().split(maxsplit=1)
+        first_name = parts[0]
+        last_name = parts[1] if len(parts) > 1 else ""
     return execute("""
         INSERT INTO users (
-            user_uuid, email, password_hash, role_id, full_name,
-            is_active, must_change_password
-        ) VALUES (?, ?, ?, ?, ?, 1, 1)
-    """, (str(uuid.uuid4()), email, password_hash, role_id, full_name))
+            user_uuid, email, password_hash, role_id, first_name, last_name,
+            is_active, must_change_pwd
+        ) VALUES (?, ?, ?, ?, ?, ?, 1, 1)
+    """, (str(uuid.uuid4()), email, password_hash, role_id, first_name, last_name))
 
 
 def update_user_active(user_id, is_active):
