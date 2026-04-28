@@ -37,7 +37,7 @@ def login_view(request):
             return render(request, 'login.html', {'next': next_url})
 
         # Vérifier le compte
-        if user.get('account_locked'):
+        if user.get('is_locked'):
             messages.error(request, "Compte verrouillé. Contactez l'administrateur.")
             return render(request, 'login.html', {'next': next_url})
 
@@ -60,7 +60,7 @@ def login_view(request):
         )
 
         # Force change password ?
-        if user.get('must_change_password'):
+        if user.get('must_change_pwd'):
             return redirect('change_password')
 
         return redirect(next_url if next_url.startswith('/') else '/')
@@ -93,7 +93,7 @@ def change_password_view(request):
         confirm = request.POST.get('confirm_password', '')
 
         # Si forcé, l'ancien n'est pas requis
-        if not user.get('must_change_password'):
+        if not user.get('must_change_pwd'):
             if not verify_password(old_pwd, user['password_hash']):
                 messages.error(request, "Mot de passe actuel incorrect")
                 return render(request, 'change_password.html')
